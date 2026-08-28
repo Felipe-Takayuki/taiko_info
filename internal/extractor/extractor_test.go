@@ -8,30 +8,34 @@ import (
 )
 
 func TestParseISODate(t *testing.T) {
+	loc, _ := time.LoadLocation("America/Sao_Paulo")
 	tests := []struct {
 		input       string
 		expectError bool
 		expectedYr  int
 		expectedMo  time.Month
 		expectedDay int
+		expectedHr  int
+		expectedMin int
 	}{
-		{"2026-08-30T15:00:00Z", false, 2026, time.August, 30},
-		{"2026-08-30T15:00:00", false, 2026, time.August, 30},
-		{"2026-08-30 15:00:00", false, 2026, time.August, 30},
-		{"2026-08-30", false, 2026, time.August, 30},
-		{"invalid-date-string", true, 0, 0, 0},
+		{"2026-08-30T19:30:00Z", false, 2026, time.August, 30, 19, 30},
+		{"2026-08-30T19:30:00", false, 2026, time.August, 30, 19, 30},
+		{"2026-08-30 19:30:00", false, 2026, time.August, 30, 19, 30},
+		{"2026-08-30 19:30", false, 2026, time.August, 30, 19, 30},
+		{"2026-08-30", false, 2026, time.August, 30, 0, 0},
+		{"invalid-date-string", true, 0, 0, 0, 0, 0},
 	}
 
 	for _, tt := range tests {
-		got, err := parseISODate(tt.input)
+		got, err := parseISODateInLocation(tt.input, loc)
 		if tt.expectError && err == nil {
-			t.Errorf("parseISODate(%q) expected error, got nil", tt.input)
+			t.Errorf("parseISODateInLocation(%q) expected error, got nil", tt.input)
 		}
 		if !tt.expectError {
 			if err != nil {
-				t.Errorf("parseISODate(%q) unexpected error: %v", tt.input, err)
-			} else if got.Year() != tt.expectedYr || got.Month() != tt.expectedMo || got.Day() != tt.expectedDay {
-				t.Errorf("parseISODate(%q) = %v; want %d-%02d-%02d", tt.input, got, tt.expectedYr, tt.expectedMo, tt.expectedDay)
+				t.Errorf("parseISODateInLocation(%q) unexpected error: %v", tt.input, err)
+			} else if got.Year() != tt.expectedYr || got.Month() != tt.expectedMo || got.Day() != tt.expectedDay || got.Hour() != tt.expectedHr || got.Minute() != tt.expectedMin {
+				t.Errorf("parseISODateInLocation(%q) = %v; want %d-%02d-%02d %02d:%02d", tt.input, got, tt.expectedYr, tt.expectedMo, tt.expectedDay, tt.expectedHr, tt.expectedMin)
 			}
 		}
 	}

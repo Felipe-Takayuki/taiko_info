@@ -71,25 +71,31 @@ func New(cfg *config.Config, database *db.DB) (*Server, error) {
 			now := time.Now().In(loc)
 			target := t.In(loc)
 
-			diff := target.Sub(now)
-			if diff < 0 {
-				return "Concluído"
-			}
-
 			// Same calendar day
 			if target.Year() == now.Year() && target.YearDay() == now.YearDay() {
-				return "Hoje"
+				if target.Before(now.Add(-3 * time.Hour)) {
+					return "Concluído"
+				}
+				if target.Before(now) {
+					return "Em andamento"
+				}
+				return fmt.Sprintf("Hoje às %s", target.Format("15:04"))
+			}
+
+			if target.Before(now) {
+				return "Concluído"
 			}
 
 			// Tomorrow
 			tomorrow := now.AddDate(0, 0, 1)
 			if target.Year() == tomorrow.Year() && target.YearDay() == tomorrow.YearDay() {
-				return "Amanhã"
+				return fmt.Sprintf("Amanhã às %s", target.Format("15:04"))
 			}
 
+			diff := target.Sub(now)
 			days := int(diff.Hours() / 24)
-			if days == 0 {
-				return "Hoje mais tarde"
+			if days <= 0 {
+				return fmt.Sprintf("Hoje às %s", target.Format("15:04"))
 			} else if days == 1 {
 				return "Em 1 dia"
 			} else if days < 7 {

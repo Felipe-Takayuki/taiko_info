@@ -28,6 +28,7 @@ Comandos Disponíveis:
   listener, run-listener    Inicia o daemon do WhatsApp (Whatsmeow + autenticação via QR Code)
   groups, list-groups       Lista todos os grupos do WhatsApp da conta com seus respectivos JIDs
   extractor, run-extractor  Executa uma extração de eventos via LLM (Gemini) das mensagens pendentes
+  reprocess                 Limpa eventos anteriores e reprocessa todas as mensagens do banco
   web, run-web              Inicia o servidor HTTP do Mural Web (porta padrão: 8080)
   all                       Inicia tanto o Listener quanto o Servidor Web concorrentemente
   version                   Exibe a versão do sistema
@@ -98,6 +99,9 @@ func main() {
 	case "extractor", "run-extractor":
 		runExtractor(ctx, cfg, database, os.Args[2:])
 
+	case "reprocess", "run-reprocess":
+		runReprocess(ctx, cfg, database, os.Args[2:])
+
 	case "web", "run-web":
 		runWeb(ctx, cfg, database, os.Args[2:])
 
@@ -149,6 +153,31 @@ func runExtractor(ctx context.Context, cfg *config.Config, database *db.DB, args
 	ext := extractor.New(cfg, database)
 	if err := ext.Run(ctx); err != nil {
 		log.Fatalf("[Extractor] Falha na extração: %v", err)
+	}
+}
+
+func runReprocess(ctx context.Context, cfg *config.Config, database *db.DB, args []string) {
+	fs := flag.NewFlagSet("reprocess", flag.ExitOnError)
+	apiKey := fs.String("api-key", cfg.GeminiAPIKey, "Chave de API do Gemini")
+	model := fs.String("model", cfg.GeminiModel, "Modelo do Gemini")
+	_ = fs.Parse(args)
+
+	if *apiKey != "" {
+		cfg.GeminiAPIKey = *apiKey
+	}
+	if *model != "" {
+		cfg.GeminiModel = *model
+	}
+
+	log.Println("[Reprocess] Limpando eventos anteriores e marcando mensagens como não processadas...")
+	_, err := database.ExecContext(ctx, `DELETE FROM events; UPDATE messages SET processed = 0;`)
+	if err != nil {
+		log.Fatalf("[Reprocess] Falha ao resetar banco: %v", err)
+	}
+
+	ext := extractor.New(cfg, database)
+	if err := ext.Run(ctx); err != nil {
+		log.Fatalf("[Reprocess] Falha na re-extração: %v", err)
 	}
 }
 

@@ -177,9 +177,9 @@ func (d *DB) SaveEventsAndMarkProcessed(ctx context.Context, events []Event, mes
 		}
 		defer stmtEvent.Close()
 
-		now := time.Now().UTC().Format("2006-01-02 15:04:05")
+		now := time.Now().Format("2006-01-02 15:04:05")
 		for _, e := range events {
-			eventDateStr := e.EventDate.UTC().Format("2006-01-02 15:04:05")
+			eventDateStr := e.EventDate.Format("2006-01-02 15:04:05")
 			if _, err := stmtEvent.ExecContext(ctx, e.Title, e.Description, eventDateStr, e.SourceSender, now); err != nil {
 				return fmt.Errorf("insert event failed: %w", err)
 			}
@@ -250,17 +250,20 @@ func (d *DB) GetStats(ctx context.Context) (totalEvents int, unprocessedMsgs int
 }
 
 func parseSQLiteTime(s string) (time.Time, error) {
+	s = strings.TrimSpace(s)
 	formats := []string{
 		"2006-01-02 15:04:05",
-		"2006-01-02T15:04:05Z",
-		"2006-01-02T15:04:05.999999999Z07:00",
-		time.RFC3339,
+		"2006-01-02T15:04:05",
+		"2006-01-02 15:04",
 		"2006-01-02",
 	}
 	for _, f := range formats {
-		if t, err := time.Parse(f, s); err == nil {
+		if t, err := time.ParseInLocation(f, s, time.Local); err == nil {
 			return t, nil
 		}
+	}
+	if t, err := time.Parse(time.RFC3339, s); err == nil {
+		return t.In(time.Local), nil
 	}
 	return time.Time{}, fmt.Errorf("cannot parse time: %s", s)
 }

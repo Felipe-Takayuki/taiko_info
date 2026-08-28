@@ -76,6 +76,11 @@ func (e *Extractor) Run(ctx context.Context) error {
 
 	log.Printf("[Extractor] LLM retornou %d evento(s) identificado(s).", len(extractedDTOs))
 
+	loc, _ := time.LoadLocation(e.cfg.ReferenceTZ)
+	if loc == nil {
+		loc = time.Local
+	}
+
 	// Convert DTOs to DB Event models
 	var eventsToSave []db.Event
 	for _, dto := range extractedDTOs {
@@ -83,11 +88,11 @@ func (e *Extractor) Run(ctx context.Context) error {
 			continue
 		}
 
-		eventTime, err := parseISODate(dto.EventDate)
+		eventTime, err := parseISODateInLocation(dto.EventDate, loc)
 		if err != nil {
 			log.Printf("[Extractor] Aviso: data inválida '%s' no evento '%s'. Usando data atual. Erro: %v",
 				dto.EventDate, dto.Title, err)
-			eventTime = time.Now()
+			eventTime = time.Now().In(loc)
 		}
 
 		eventsToSave = append(eventsToSave, db.Event{
@@ -161,13 +166,13 @@ func (e *Extractor) callGeminiAPI(ctx context.Context, messagesTranscript string
 	systemPrompt := fmt.Sprintf(`Você é um assistente especialista em extrair eventos, compromissos, reuniões, ensaios, apresentações e prazos a partir de mensagens de um grupo do WhatsApp.
 
 Contexto Temporal Atual:
-- Data e Hora de Referência: %s (%s)
-- Fuso Horário: %s
+- Data e Hora Atual de Referência: %s (%s)
+- Fuso Horário Local: %s (Horário de Brasília)
 
 Diretrizes Obrigatórias:
 1. Analise cuidadosamente todo o histórico de mensagens fornecido.
 2. Identifique todos os eventos futuros ou compromissos combinados pelos participantes.
-3. Resolva datas e horas relativas (ex: "hoje às 19h", "amanhã", "próximo sábado", "dia 15", "às 14:30") para o formato ISO 8601 estrito (YYYY-MM-DDTHH:MM:SSZ). Se o ano não for mencionado, assuma o ano corrente.
+3. Se a mensagem mencionar um horário (ex: "19:30", "15:00", "às 14h"), preserve ESTRITAMENTE esse horário local no campo 'event_date' formatado como 'YYYY-MM-DDTHH:MM:SS' (NÃO subtraia horas e NÃO adicione Z). Se o ano não for mencionado, assuma o ano corrente.
 4. Extraia quem propôs ou confirmou a informação em 'source_sender'.
 5. Se nenhuma mensagem contiver eventos ou compromissos agendados, retorne uma lista JSON vazia: []
 6. Responda ESTRITAMENTE um array JSON válido sem markdown ou blocos de código adicionais.
@@ -175,8 +180,8 @@ Diretrizes Obrigatórias:
 Formato esperado de cada item:
 {
   "title": "Título conciso do evento (ex: Ensaio Geral de Taiko, Apresentação no Festival)",
-  "description": "Detalhes como local, o que levar, observações relevantes",
-  "event_date": "2026-08-30T15:00:00Z",
+  "description": "Detalhes como local, horário completo, o que levar, observações relevantes",
+  "event_date": "2026-08-30T19:30:00",
   "source_sender": "Nome/Número do participante que anunciou"
 }`, now.Format("2006-01-02 15:04:05"), now.Weekday().String(), e.cfg.ReferenceTZ)
 
@@ -320,20 +325,29 @@ Formato esperado de cada item:
 	return dtos, nil
 }
 
-func parseISODate(s string) (time.Time, error) {
+func parseISODateInLocation(s string, loc *time.Location) (time.Time, error) {
 	s = strings.TrimSpace(s)
+	// Strip Z/z suffix to prevent treating local times as UTC
+	sClean := strings.TrimSuffix(s, "Z")
+	sClean = strings.TrimSuffix(sClean, "z")
+
 	formats := []string{
-		time.RFC3339,
 		"2006-01-02T15:04:05",
 		"2006-01-02 15:04:05",
-		"2006-01-02T15:04:05.000Z",
+		"2006-01-02T15:04",
+		"2006-01-02 15:04",
 		"2006-01-02",
 	}
 
 	for _, f := range formats {
-		if t, err := time.Parse(f, s); err == nil {
+		if t, err := time.ParseInLocation(f, sClean, loc); err == nil {
 			return t, nil
 		}
 	}
+
+	if t, err := time.Parse(time.RFC3339, s); err == nil {
+		return t.In(loc), nil
+	}
+
 	return time.Time{}, fmt.Errorf("formato de data desconhecido: %s", s)
 }
