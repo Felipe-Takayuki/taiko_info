@@ -13,6 +13,7 @@ import (
 	"github.com/mdp/qrterminal/v3"
 	"go.mau.fi/whatsmeow"
 	"go.mau.fi/whatsmeow/store/sqlstore"
+	"go.mau.fi/whatsmeow/proto/waE2E"
 	"go.mau.fi/whatsmeow/types/events"
 	waLog "go.mau.fi/whatsmeow/util/log"
 
@@ -132,6 +133,9 @@ func (l *Listener) handleEvent(evt interface{}) {
 
 	case *events.Message:
 		l.processMessage(v)
+
+	case *events.HistorySync:
+		l.processHistorySync(v)
 	}
 }
 
@@ -216,6 +220,95 @@ func extractMessageText(msg *events.Message) string {
 
 	return ""
 }
+
+// processHistorySync extracts past messages delivered during initial history sync.
+func (l *Listener) processHistorySync(evt *events.HistorySync) {
+	if evt.Data == nil {
+		return
+	}
+
+	savedCount := 0
+	for _, conv := range evt.Data.GetConversations() {
+		chatJID := conv.GetID()
+
+		// Filter by target group if configured
+		if l.cfg.WhatsAppGroup != "" {
+			target := strings.TrimSpace(l.cfg.WhatsAppGroup)
+			isMatching := chatJID == target ||
+				strings.HasPrefix(chatJID, target+"@") ||
+				(strings.HasSuffix(target, "@g.us") && chatJID == target)
+			if !isMatching {
+				continue
+			}
+		}
+
+		for _, hMsg := range conv.GetMessages() {
+			webMsg := hMsg.GetMessage()
+			if webMsg == nil || webMsg.GetMessage() == nil {
+				continue
+			}
+
+			text := extractRawMessageText(webMsg.GetMessage())
+			if strings.TrimSpace(text) == "" {
+				continue
+			}
+
+			msgID := webMsg.GetKey().GetID()
+			if msgID == "" {
+				continue
+			}
+
+			sender := webMsg.GetPushName()
+			if sender == "" {
+				sender = webMsg.GetKey().GetParticipant()
+			}
+			if sender == "" {
+				sender = "Participante"
+			}
+
+			tsSeconds := int64(webMsg.GetMessageTimestamp())
+			msgTime := time.Now()
+			if tsSeconds > 0 {
+				msgTime = time.Unix(tsSeconds, 0)
+			}
+
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			err := l.database.SaveMessage(ctx, msgID, sender, text, msgTime)
+			cancel()
+			if err == nil {
+				savedCount++
+			}
+		}
+	}
+
+	if savedCount > 0 {
+		log.Printf("[Listener] Sincronização de Histórico: %d mensagens antigas importadas para o banco!", savedCount)
+	}
+}
+
+// extractRawMessageText extracts text from waE2E.Message
+func extractRawMessageText(m *waE2E.Message) string {
+	if m == nil {
+		return ""
+	}
+	if text := m.GetConversation(); text != "" {
+		return text
+	}
+	if ext := m.GetExtendedTextMessage(); ext != nil && ext.GetText() != "" {
+		return ext.GetText()
+	}
+	if img := m.GetImageMessage(); img != nil && img.GetCaption() != "" {
+		return img.GetCaption()
+	}
+	if vid := m.GetVideoMessage(); vid != nil && vid.GetCaption() != "" {
+		return vid.GetCaption()
+	}
+	if doc := m.GetDocumentMessage(); doc != nil && doc.GetCaption() != "" {
+		return doc.GetCaption()
+	}
+	return ""
+}
+
 
 // ListGroups connects to WhatsApp using the stored session and lists all joined groups with their JIDs.
 func (l *Listener) ListGroups(ctx context.Context) error {
