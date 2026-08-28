@@ -216,3 +216,58 @@ func extractMessageText(msg *events.Message) string {
 
 	return ""
 }
+
+// ListGroups connects to WhatsApp using the stored session and lists all joined groups with their JIDs.
+func (l *Listener) ListGroups(ctx context.Context) error {
+	dsn := fmt.Sprintf("file:%s?_journal_mode=WAL&_busy_timeout=5000&_foreign_keys=on", l.cfg.DBPath)
+	container, err := sqlstore.New(ctx, "sqlite3", dsn, l.waLogger)
+	if err != nil {
+		return fmt.Errorf("falha ao inicializar whatsmeow store: %w", err)
+	}
+
+	deviceStore, err := container.GetFirstDevice(ctx)
+	if err != nil {
+		return fmt.Errorf("falha ao obter device store: %w", err)
+	}
+
+	if deviceStore.ID == nil {
+		return fmt.Errorf("nenhuma sessão WhatsApp encontrada. Execute './taiko listener' primeiro para parear via QR code")
+	}
+
+	client := whatsmeow.NewClient(deviceStore, l.waLogger)
+	if err = client.Connect(); err != nil {
+		return fmt.Errorf("falha ao conectar ao WhatsApp: %w", err)
+	}
+	defer client.Disconnect()
+
+	// Wait briefly for handshake
+	time.Sleep(2 * time.Second)
+
+	groups, err := client.GetJoinedGroups(ctx)
+	if err != nil {
+		return fmt.Errorf("falha ao obter lista de grupos: %w", err)
+	}
+
+	if len(groups) == 0 {
+		fmt.Println("\nNenhum grupo encontrado nesta conta do WhatsApp.")
+		return nil
+	}
+
+	fmt.Printf("\n===============================================================================\n")
+	fmt.Printf("           LISTA DE GRUPOS ENCONTRADOS (%d grupos)                             \n", len(groups))
+	fmt.Printf("===============================================================================\n\n")
+
+	for i, g := range groups {
+		adminTag := ""
+		if g.IsAnnounce {
+			adminTag = " (🔒 Apenas Administradores podem enviar mensagens)"
+		}
+		fmt.Printf("[%2d] %s%s\n     JID: %s\n\n", i+1, g.Name, adminTag, g.JID.String())
+	}
+
+	fmt.Printf("===============================================================================\n")
+	fmt.Printf("Copie o JID do grupo desejado e cole no seu .env: WHATSAPP_GROUP_JID=<JID>\n")
+	fmt.Printf("===============================================================================\n")
+	return nil
+}
+

@@ -26,6 +26,7 @@ Uso:
 
 Comandos Disponíveis:
   listener, run-listener    Inicia o daemon do WhatsApp (Whatsmeow + autenticação via QR Code)
+  groups, list-groups       Lista todos os grupos do WhatsApp da conta com seus respectivos JIDs
   extractor, run-extractor  Executa uma extração de eventos via LLM (Gemini) das mensagens pendentes
   web, run-web              Inicia o servidor HTTP do Mural Web (porta padrão: 8080)
   all                       Inicia tanto o Listener quanto o Servidor Web concorrentemente
@@ -91,6 +92,9 @@ func main() {
 	case "listener", "run-listener":
 		runListener(ctx, cfg, database, os.Args[2:])
 
+	case "groups", "list-groups":
+		runListGroups(ctx, cfg, database)
+
 	case "extractor", "run-extractor":
 		runExtractor(ctx, cfg, database, os.Args[2:])
 
@@ -119,6 +123,13 @@ func runListener(ctx context.Context, cfg *config.Config, database *db.DB, args 
 	srv := listener.New(cfg, database)
 	if err := srv.Run(ctx); err != nil {
 		log.Fatalf("[Listener] Falha fatal: %v", err)
+	}
+}
+
+func runListGroups(ctx context.Context, cfg *config.Config, database *db.DB) {
+	srv := listener.New(cfg, database)
+	if err := srv.ListGroups(ctx); err != nil {
+		log.Fatalf("[Groups] Erro ao listar grupos: %v", err)
 	}
 }
 
