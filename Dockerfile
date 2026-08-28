@@ -3,12 +3,13 @@
 # -----------------------------------------------------------------------------
 # Estágio 1: Build (Compilação do binário Go com CGO habilitado para SQLite)
 # -----------------------------------------------------------------------------
-FROM golang:1.24-alpine AS builder
+FROM golang:alpine AS builder
 
 WORKDIR /src
 
-# Instala dependências de compilação C (necessárias para o driver mattn/go-sqlite3)
-RUN apk add --no-cache gcc musl-dev
+# Habilita download automático de toolchain se necessário e instala GCC
+ENV GOTOOLCHAIN=auto
+RUN apk add --no-cache gcc musl-dev git
 
 # Cache de dependências do Go
 COPY go.mod go.sum ./
@@ -23,7 +24,7 @@ RUN CGO_ENABLED=1 GOOS=linux go build -ldflags="-s -w" -o /bin/taiko .
 # -----------------------------------------------------------------------------
 # Estágio 2: Imagem Final Leve (~25MB)
 # -----------------------------------------------------------------------------
-FROM alpine:3.20
+FROM alpine:latest
 
 WORKDIR /app
 
