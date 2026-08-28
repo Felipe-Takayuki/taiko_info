@@ -256,7 +256,9 @@ Formato esperado de cada item:
 				break
 			}
 
-			if resp.StatusCode == http.StatusNotFound {
+			if resp.StatusCode == http.StatusNotFound || resp.StatusCode == http.StatusServiceUnavailable || resp.StatusCode == http.StatusTooManyRequests {
+				log.Printf("[Extractor] Modelo '%s' retornou status %d (%s), tentando próximo modelo...", mName, resp.StatusCode, resp.Status)
+				time.Sleep(1 * time.Second)
 				continue
 			}
 
