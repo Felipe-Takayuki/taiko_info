@@ -1,0 +1,266 @@
+package db
+
+import (
+	"context"
+	"database/sql"
+	"fmt"
+	"net/url"
+	"strings"
+	"sync"
+	"time"
+
+	_ "github.com/mattn/go-sqlite3"
+)
+
+// Message represents a captured WhatsApp message.
+type Message struct {
+	ID        string    `json:"id"`
+	Sender    string    `json:"sender"`
+	Message   string    `json:"message"`
+	CreatedAt time.Time `json:"created_at"`
+	Processed int       `json:"processed"`
+}
+
+// Event represents an event extracted by the LLM.
+type Event struct {
+	ID           int64     `json:"id"`
+	Title        string    `json:"title"`
+	Description  string    `json:"description"`
+	EventDate    time.Time `json:"event_date"`
+	SourceSender string    `json:"source_sender"`
+	CreatedAt    time.Time `json:"created_at"`
+}
+
+// DB wraps the sql.DB instance with a mutex for thread-safe serialized write operations if needed.
+type DB struct {
+	*sql.DB
+	writeMu sync.Mutex
+}
+
+// Open initializes and configures the SQLite connection with concurrency-safe pragmas.
+func Open(dbPath string) (*DB, error) {
+	// Setup SQLite DSN with WAL mode, busy timeout, and normal sync
+	params := url.Values{}
+	params.Add("_journal_mode", "WAL")
+	params.Add("_busy_timeout", "5000")
+	params.Add("_synchronous", "NORMAL")
+	params.Add("_foreign_keys", "1")
+
+	dsn := fmt.Sprintf("file:%s?%s", dbPath, params.Encode())
+	if !strings.HasPrefix(dbPath, "/") && !strings.HasPrefix(dbPath, "./") && !strings.HasPrefix(dbPath, "../") {
+		dsn = fmt.Sprintf("file:%s?%s", dbPath, params.Encode())
+	}
+
+	conn, err := sql.Open("sqlite3", dsn)
+	if err != nil {
+		return nil, fmt.Errorf("failed to open sqlite database: %w", err)
+	}
+
+	// SQLite best practice for concurrent writes: max 1 open connection to avoid SQLITE_BUSY
+	conn.SetMaxOpenConns(1)
+	conn.SetMaxIdleConns(1)
+	conn.SetConnMaxLifetime(0)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	if err := conn.PingContext(ctx); err != nil {
+		return nil, fmt.Errorf("failed to ping sqlite database: %w", err)
+	}
+
+	database := &DB{DB: conn}
+	if err := database.migrate(ctx); err != nil {
+		return nil, fmt.Errorf("failed to execute migrations: %w", err)
+	}
+
+	return database, nil
+}
+
+// migrate creates required tables and indexes.
+func (d *DB) migrate(ctx context.Context) error {
+	schema := `
+	CREATE TABLE IF NOT EXISTS messages (
+		id TEXT PRIMARY KEY,
+		sender TEXT,
+		message TEXT,
+		created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+		processed INTEGER DEFAULT 0
+	);
+
+	CREATE INDEX IF NOT EXISTS idx_messages_processed ON messages(processed);
+
+	CREATE TABLE IF NOT EXISTS events (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		title TEXT NOT NULL,
+		description TEXT,
+		event_date DATETIME NOT NULL,
+		source_sender TEXT,
+		created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+	);
+
+	CREATE INDEX IF NOT EXISTS idx_events_date ON events(event_date);
+	`
+	_, err := d.ExecContext(ctx, schema)
+	return err
+}
+
+// SaveMessage stores an incoming WhatsApp message into the database.
+func (d *DB) SaveMessage(ctx context.Context, id, sender, message string, createdAt time.Time) error {
+	d.writeMu.Lock()
+	defer d.writeMu.Unlock()
+
+	query := `
+	INSERT INTO messages (id, sender, message, created_at, processed)
+	VALUES (?, ?, ?, ?, 0)
+	ON CONFLICT(id) DO UPDATE SET
+		message = excluded.message,
+		sender = excluded.sender;
+	`
+	_, err := d.ExecContext(ctx, query, id, sender, message, createdAt.UTC().Format("2006-01-02 15:04:05"))
+	return err
+}
+
+// GetUnprocessedMessages fetches all unprocessed messages ordered chronologically.
+func (d *DB) GetUnprocessedMessages(ctx context.Context, limit int) ([]Message, error) {
+	query := `
+	SELECT id, sender, message, created_at, processed
+	FROM messages
+	WHERE processed = 0
+	ORDER BY created_at ASC
+	`
+	if limit > 0 {
+		query += fmt.Sprintf(" LIMIT %d", limit)
+	}
+
+	rows, err := d.QueryContext(ctx, query)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var msgs []Message
+	for rows.Next() {
+		var m Message
+		var createdAtStr string
+		if err := rows.Scan(&m.ID, &m.Sender, &m.Message, &createdAtStr, &m.Processed); err != nil {
+			return nil, err
+		}
+		// Parse date formats returned by SQLite
+		t, err := parseSQLiteTime(createdAtStr)
+		if err == nil {
+			m.CreatedAt = t
+		}
+		msgs = append(msgs, m)
+	}
+
+	return msgs, rows.Err()
+}
+
+// SaveEventsAndMarkProcessed atomically inserts extracted events and updates messages to processed = 1.
+func (d *DB) SaveEventsAndMarkProcessed(ctx context.Context, events []Event, messageIDs []string) error {
+	d.writeMu.Lock()
+	defer d.writeMu.Unlock()
+
+	tx, err := d.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin tx failed: %w", err)
+	}
+	defer tx.Rollback()
+
+	if len(events) > 0 {
+		stmtEvent, err := tx.PrepareContext(ctx, `
+			INSERT INTO events (title, description, event_date, source_sender, created_at)
+			VALUES (?, ?, ?, ?, ?)
+		`)
+		if err != nil {
+			return fmt.Errorf("prepare event insert failed: %w", err)
+		}
+		defer stmtEvent.Close()
+
+		now := time.Now().UTC().Format("2006-01-02 15:04:05")
+		for _, e := range events {
+			eventDateStr := e.EventDate.UTC().Format("2006-01-02 15:04:05")
+			if _, err := stmtEvent.ExecContext(ctx, e.Title, e.Description, eventDateStr, e.SourceSender, now); err != nil {
+				return fmt.Errorf("insert event failed: %w", err)
+			}
+		}
+	}
+
+	if len(messageIDs) > 0 {
+		stmtMsg, err := tx.PrepareContext(ctx, `UPDATE messages SET processed = 1 WHERE id = ?`)
+		if err != nil {
+			return fmt.Errorf("prepare update message failed: %w", err)
+		}
+		defer stmtMsg.Close()
+
+		for _, msgID := range messageIDs {
+			if _, err := stmtMsg.ExecContext(ctx, msgID); err != nil {
+				return fmt.Errorf("update message processed failed: %w", err)
+			}
+		}
+	}
+
+	return tx.Commit()
+}
+
+// GetAllEvents returns all events ordered by event_date descending.
+func (d *DB) GetAllEvents(ctx context.Context) ([]Event, error) {
+	query := `
+	SELECT id, title, description, event_date, source_sender, created_at
+	FROM events
+	ORDER BY event_date DESC
+	`
+	rows, err := d.QueryContext(ctx, query)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var events []Event
+	for rows.Next() {
+		var e Event
+		var eventDateStr, createdAtStr string
+		if err := rows.Scan(&e.ID, &e.Title, &e.Description, &eventDateStr, &e.SourceSender, &createdAtStr); err != nil {
+			return nil, err
+		}
+		if t, err := parseSQLiteTime(eventDateStr); err == nil {
+			e.EventDate = t
+		}
+		if t, err := parseSQLiteTime(createdAtStr); err == nil {
+			e.CreatedAt = t
+		}
+		events = append(events, e)
+	}
+
+	return events, rows.Err()
+}
+
+// GetStats returns summary counts for dashboard metrics.
+func (d *DB) GetStats(ctx context.Context) (totalEvents int, unprocessedMsgs int, processedMsgs int, err error) {
+	err = d.QueryRowContext(ctx, `SELECT COUNT(*) FROM events`).Scan(&totalEvents)
+	if err != nil {
+		return
+	}
+	err = d.QueryRowContext(ctx, `SELECT COUNT(*) FROM messages WHERE processed = 0`).Scan(&unprocessedMsgs)
+	if err != nil {
+		return
+	}
+	err = d.QueryRowContext(ctx, `SELECT COUNT(*) FROM messages WHERE processed = 1`).Scan(&processedMsgs)
+	return
+}
+
+func parseSQLiteTime(s string) (time.Time, error) {
+	formats := []string{
+		"2006-01-02 15:04:05",
+		"2006-01-02T15:04:05Z",
+		"2006-01-02T15:04:05.999999999Z07:00",
+		time.RFC3339,
+		"2006-01-02",
+	}
+	for _, f := range formats {
+		if t, err := time.Parse(f, s); err == nil {
+			return t, nil
+		}
+	}
+	return time.Time{}, fmt.Errorf("cannot parse time: %s", s)
+}

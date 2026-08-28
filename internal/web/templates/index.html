@@ -1,0 +1,455 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mural de Eventos - Taiko</title>
+    <style>
+        :root {
+            --bg-base: #0b0f19;
+            --bg-surface: #111827;
+            --bg-card: #1f2937;
+            --bg-card-hover: #263346;
+            --text-main: #f9fafb;
+            --text-muted: #9ca3af;
+            --text-subtle: #6b7280;
+            --border: #374151;
+            --accent-primary: #38bdf8;
+            --accent-purple: #818cf8;
+            --accent-green: #34d399;
+            --accent-amber: #fbbf24;
+            --badge-bg: rgba(56, 189, 248, 0.12);
+            --badge-border: rgba(56, 189, 248, 0.3);
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: var(--bg-base);
+            color: var(--text-main);
+            line-height: 1.6;
+            padding: 2rem 1rem;
+            min-height: 100vh;
+        }
+
+        .container {
+            max-width: 1000px;
+            margin: 0 auto;
+        }
+
+        header {
+            display: flex;
+            flex-direction: column;
+            gap: 1.5rem;
+            margin-bottom: 2.5rem;
+            padding-bottom: 1.5rem;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .header-top {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 1rem;
+        }
+
+        .brand {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+        }
+
+        .brand-icon {
+            width: 40px;
+            height: 40px;
+            background: linear-gradient(135deg, var(--accent-primary), var(--accent-purple));
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.3rem;
+            box-shadow: 0 4px 14px rgba(56, 189, 248, 0.25);
+        }
+
+        h1 {
+            font-size: 1.75rem;
+            font-weight: 700;
+            letter-spacing: -0.025em;
+            background: linear-gradient(to right, #ffffff, #94a3b8);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .subtitle {
+            color: var(--text-muted);
+            font-size: 0.95rem;
+        }
+
+        .status-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.4rem;
+            padding: 0.35rem 0.85rem;
+            background: rgba(52, 211, 153, 0.12);
+            border: 1px solid rgba(52, 211, 153, 0.3);
+            color: var(--accent-green);
+            border-radius: 9999px;
+            font-size: 0.8rem;
+            font-weight: 600;
+        }
+
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            background-color: var(--accent-green);
+            border-radius: 50%;
+            box-shadow: 0 0 8px var(--accent-green);
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.4; }
+        }
+
+        .metrics-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+            gap: 1rem;
+        }
+
+        .metric-card {
+            background: var(--bg-surface);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 1rem 1.25rem;
+            display: flex;
+            flex-direction: column;
+            gap: 0.25rem;
+        }
+
+        .metric-label {
+            font-size: 0.75rem;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            color: var(--text-muted);
+            font-weight: 600;
+        }
+
+        .metric-value {
+            font-size: 1.6rem;
+            font-weight: 700;
+            color: var(--text-main);
+        }
+
+        .section-title {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            font-size: 1.2rem;
+            font-weight: 600;
+            margin: 2rem 0 1rem;
+            color: var(--text-main);
+        }
+
+        .events-grid {
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 1.25rem;
+        }
+
+        .event-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 14px;
+            padding: 1.5rem;
+            display: flex;
+            gap: 1.5rem;
+            transition: transform 0.15s ease, border-color 0.15s ease, background 0.15s ease;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .event-card:hover {
+            transform: translateY(-2px);
+            background: var(--bg-card-hover);
+            border-color: #4b5563;
+        }
+
+        .event-card.past {
+            opacity: 0.65;
+            background: #182230;
+        }
+
+        .event-card.past:hover {
+            opacity: 0.9;
+        }
+
+        .event-date-box {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            background: var(--bg-surface);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            padding: 0.75rem;
+            min-width: 80px;
+            max-height: 90px;
+            text-align: center;
+            flex-shrink: 0;
+        }
+
+        .event-month {
+            font-size: 0.75rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            color: var(--accent-primary);
+            letter-spacing: 0.05em;
+        }
+
+        .event-day {
+            font-size: 1.75rem;
+            font-weight: 800;
+            line-height: 1.1;
+            color: var(--text-main);
+        }
+
+        .event-weekday {
+            font-size: 0.7rem;
+            color: var(--text-muted);
+            text-transform: capitalize;
+        }
+
+        .event-content {
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+            flex-grow: 1;
+        }
+
+        .event-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            flex-wrap: wrap;
+            gap: 0.5rem;
+        }
+
+        .event-title {
+            font-size: 1.15rem;
+            font-weight: 600;
+            color: var(--text-main);
+        }
+
+        .event-tags {
+            display: flex;
+            gap: 0.5rem;
+            flex-wrap: wrap;
+        }
+
+        .tag {
+            font-size: 0.75rem;
+            padding: 0.2rem 0.6rem;
+            border-radius: 6px;
+            font-weight: 500;
+        }
+
+        .tag-time {
+            background: rgba(56, 189, 248, 0.12);
+            color: var(--accent-primary);
+            border: 1px solid rgba(56, 189, 248, 0.3);
+        }
+
+        .tag-relative {
+            background: rgba(129, 140, 248, 0.12);
+            color: var(--accent-purple);
+            border: 1px solid rgba(129, 140, 248, 0.3);
+        }
+
+        .tag-past {
+            background: rgba(156, 163, 175, 0.1);
+            color: var(--text-muted);
+            border: 1px solid rgba(156, 163, 175, 0.2);
+        }
+
+        .event-description {
+            color: #d1d5db;
+            font-size: 0.95rem;
+            white-space: pre-wrap;
+        }
+
+        .event-footer {
+            margin-top: 0.5rem;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            font-size: 0.8rem;
+            color: var(--text-subtle);
+            border-top: 1px solid rgba(255, 255, 255, 0.05);
+            padding-top: 0.5rem;
+        }
+
+        .source-sender {
+            display: flex;
+            align-items: center;
+            gap: 0.3rem;
+            color: var(--text-muted);
+        }
+
+        .empty-state {
+            background: var(--bg-surface);
+            border: 1px dashed var(--border);
+            border-radius: 14px;
+            padding: 3.5rem 1.5rem;
+            text-align: center;
+            color: var(--text-muted);
+        }
+
+        .empty-icon {
+            font-size: 2.5rem;
+            margin-bottom: 0.75rem;
+        }
+
+        footer {
+            margin-top: 3.5rem;
+            text-align: center;
+            font-size: 0.85rem;
+            color: var(--text-subtle);
+            border-top: 1px solid var(--border);
+            padding-top: 1.5rem;
+        }
+
+        @media (max-width: 640px) {
+            .event-card {
+                flex-direction: column;
+                gap: 1rem;
+            }
+            .event-date-box {
+                flex-direction: row;
+                justify-content: space-around;
+                width: 100%;
+                max-height: none;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <div class="header-top">
+                <div class="brand">
+                    <div class="brand-icon">🥁</div>
+                    <div>
+                        <h1>Mural de Eventos</h1>
+                        <p class="subtitle">Sincronizado automaticamente do WhatsApp via IA</p>
+                    </div>
+                </div>
+                <div class="status-badge">
+                    <span class="status-dot"></span>
+                    <span>Sistema Ativo</span>
+                </div>
+            </div>
+
+            <div class="metrics-grid">
+                <div class="metric-card">
+                    <span class="metric-label">Próximos Eventos</span>
+                    <span class="metric-value" style="color: var(--accent-primary);">{{.UpcomingCount}}</span>
+                </div>
+                <div class="metric-card">
+                    <span class="metric-label">Total de Eventos</span>
+                    <span class="metric-value">{{.TotalEvents}}</span>
+                </div>
+                <div class="metric-card">
+                    <span class="metric-label">Mensagens Processadas</span>
+                    <span class="metric-value">{{.ProcessedMsgs}}</span>
+                </div>
+            </div>
+        </header>
+
+        <main>
+            {{if .UpcomingEvents}}
+                <h2 class="section-title">📅 Próximos Compromissos</h2>
+                <div class="events-grid">
+                    {{range .UpcomingEvents}}
+                        <article class="event-card">
+                            <div class="event-date-box">
+                                <span class="event-month">{{.EventDate | formatMonth}}</span>
+                                <span class="event-day">{{.EventDate | formatDay}}</span>
+                                <span class="event-weekday">{{.EventDate | formatWeekday}}</span>
+                            </div>
+                            <div class="event-content">
+                                <div class="event-header">
+                                    <h3 class="event-title">{{.Title}}</h3>
+                                    <div class="event-tags">
+                                        <span class="tag tag-time">🕒 {{.EventDate | formatTime}}</span>
+                                        <span class="tag tag-relative">{{.EventDate | formatRelative}}</span>
+                                    </div>
+                                </div>
+                                {{if .Description}}
+                                    <p class="event-description">{{.Description}}</p>
+                                {{end}}
+                                <div class="event-footer">
+                                    <span class="source-sender">👤 Informado por: {{.SourceSender}}</span>
+                                    <span>Registrado em: {{.CreatedAt | formatShortDate}}</span>
+                                </div>
+                            </div>
+                        </article>
+                    {{end}}
+                </div>
+            {{end}}
+
+            {{if .PastEvents}}
+                <h2 class="section-title" style="margin-top: 3rem; color: var(--text-muted);">📁 Eventos Anteriores</h2>
+                <div class="events-grid">
+                    {{range .PastEvents}}
+                        <article class="event-card past">
+                            <div class="event-date-box">
+                                <span class="event-month">{{.EventDate | formatMonth}}</span>
+                                <span class="event-day">{{.EventDate | formatDay}}</span>
+                                <span class="event-weekday">{{.EventDate | formatWeekday}}</span>
+                            </div>
+                            <div class="event-content">
+                                <div class="event-header">
+                                    <h3 class="event-title">{{.Title}}</h3>
+                                    <div class="event-tags">
+                                        <span class="tag tag-past">🕒 {{.EventDate | formatTime}}</span>
+                                        <span class="tag tag-past">Realizado</span>
+                                    </div>
+                                </div>
+                                {{if .Description}}
+                                    <p class="event-description">{{.Description}}</p>
+                                {{end}}
+                                <div class="event-footer">
+                                    <span class="source-sender">👤 Informado por: {{.SourceSender}}</span>
+                                    <span>Registrado em: {{.CreatedAt | formatShortDate}}</span>
+                                </div>
+                            </div>
+                        </article>
+                    {{end}}
+                </div>
+            {{end}}
+
+            {{if and (not .UpcomingEvents) (not .PastEvents)}}
+                <div class="empty-state">
+                    <div class="empty-icon">📭</div>
+                    <h3>Nenhum evento registrado ainda</h3>
+                    <p style="margin-top: 0.5rem; font-size: 0.9rem;">
+                        As mensagens do grupo do WhatsApp serão analisadas e os compromissos aparecerão aqui automaticamente.
+                    </p>
+                </div>
+            {{end}}
+        </main>
+
+        <footer>
+            <p>Taiko Info Daemon &bull; Desenvolvido em Go nativo + SQLite &bull; Atualizado em {{.CurrentTime | formatFullDate}}</p>
+        </footer>
+    </div>
+</body>
+</html>

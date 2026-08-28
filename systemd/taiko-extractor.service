@@ -1,0 +1,19 @@
+[Unit]
+Description=Taiko Weekly WhatsApp Event Extractor Batch
+After=network.target network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=takayuki
+Group=takayuki
+WorkingDirectory=/home/takayuki/Projects/taiko_info
+EnvironmentFile=/home/takayuki/Projects/taiko_info/.env
+ExecStart=/home/takayuki/Projects/taiko_info/taiko extractor
+
+# Timeout to allow LLM API calls and batch processing
+TimeoutStartSec=180s
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=taiko-extractor

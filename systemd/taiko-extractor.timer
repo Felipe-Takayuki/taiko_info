@@ -1,0 +1,14 @@
+[Unit]
+Description=Run Taiko WhatsApp Event Extractor Weekly
+Requires=taiko-extractor.service
+
+[Timer]
+# Run every Sunday at 03:00 AM
+OnCalendar=Sun *-*-* 03:00:00
+# Run immediately if a scheduled event was missed (e.g., machine was offline)
+Persistent=true
+# Optional random delay up to 5 minutes to avoid peak stampedes
+RandomizedDelaySec=300
+
+[Install]
+WantedBy=timers.target

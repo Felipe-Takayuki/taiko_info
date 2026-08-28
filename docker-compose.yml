@@ -1,0 +1,22 @@
+services:
+  taiko:
+    build: .
+    container_name: taiko_app
+    restart: unless-stopped
+    ports:
+      - "${HTTP_PORT:-8080}:8080"
+    env_file:
+      - .env
+    environment:
+      - DB_PATH=/app/data/app.db
+      - HTTP_PORT=8080
+      - TIMEZONE=${TIMEZONE:-America/Sao_Paulo}
+    volumes:
+      - ./data:/app/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    command: ["all"]

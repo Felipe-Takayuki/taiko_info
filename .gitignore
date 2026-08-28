@@ -1,0 +1,27 @@
+# Binários compilados
+taiko
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Bancos de dados e sessões locais
+*.db
+*.db-wal
+*.db-shm
+app.db*
+data/
+
+# Arquivos de ambiente e segredos
+.env
+*.env.local
+
+# Logs
+*.log
+extractor.log
+
+# Diretórios temporários
+tmp/
+scratch/
+.system_generated/

@@ -1,0 +1,24 @@
+[Unit]
+Description=Taiko WhatsApp Event Listener Daemon
+After=network.target network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=takayuki
+Group=takayuki
+WorkingDirectory=/home/takayuki/Projects/taiko_info
+EnvironmentFile=/home/takayuki/Projects/taiko_info/.env
+ExecStart=/home/takayuki/Projects/taiko_info/taiko listener
+Restart=always
+RestartSec=10s
+
+# Low-resource and sandbox tuning
+Nice=10
+LimitNOFILE=65535
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=taiko-listener
+
+[Install]
+WantedBy=multi-user.target

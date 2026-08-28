@@ -1,0 +1,22 @@
+[Unit]
+Description=Taiko Web Dashboard Mural Service
+After=network.target
+
+[Service]
+Type=simple
+User=takayuki
+Group=takayuki
+WorkingDirectory=/home/takayuki/Projects/taiko_info
+EnvironmentFile=/home/takayuki/Projects/taiko_info/.env
+ExecStart=/home/takayuki/Projects/taiko_info/taiko web
+Restart=always
+RestartSec=5s
+
+Nice=10
+LimitNOFILE=65535
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=taiko-web
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,8 @@
+.git
+.gitignore
+.env
+app.db*
+*.db
+*.log
+taiko
+scratch
