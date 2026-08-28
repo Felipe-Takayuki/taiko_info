@@ -209,50 +209,78 @@ Formato esperado de cada item:
 
 	model := strings.TrimPrefix(e.cfg.GeminiModel, "models/")
 	modelsToTry := []string{model}
-	for _, fallback := range []string{"gemini-2.0-flash", "gemini-2.5-flash", "gemini-1.5-flash-latest", "gemini-1.5-pro"} {
+	for _, fallback := range []string{
+		"gemini-1.5-flash-002",
+		"gemini-1.5-flash-001",
+		"gemini-1.5-flash-8b",
+		"gemini-2.0-flash-exp",
+		"gemini-2.0-flash",
+		"gemini-1.5-flash",
+		"gemini-1.5-pro-002",
+		"gemini-1.5-pro-001",
+		"gemini-1.5-pro",
+		"gemini-pro",
+	} {
 		if fallback != model {
 			modelsToTry = append(modelsToTry, fallback)
 		}
 	}
 
+	apiVersions := []string{"v1beta", "v1"}
 	var respBytes []byte
 	var lastStatus int
 	var success bool
+	var usedModel, usedVersion string
 
-	for _, mName := range modelsToTry {
-		url := fmt.Sprintf("https://generativelanguage.googleapis.com/v1beta/models/%s:generateContent?key=%s", mName, e.cfg.GeminiAPIKey)
-		req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(bodyBytes))
-		if err != nil {
-			return nil, fmt.Errorf("falha ao criar requisição HTTP: %w", err)
+	for _, apiVer := range apiVersions {
+		for _, mName := range modelsToTry {
+			url := fmt.Sprintf("https://generativelanguage.googleapis.com/%s/models/%s:generateContent?key=%s", apiVer, mName, e.cfg.GeminiAPIKey)
+			req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(bodyBytes))
+			if err != nil {
+				return nil, fmt.Errorf("falha ao criar requisição HTTP: %w", err)
+			}
+			req.Header.Set("Content-Type", "application/json")
+
+			resp, err := e.httpClient.Do(req)
+			if err != nil {
+				return nil, fmt.Errorf("falha na chamada HTTP para API do Gemini: %w", err)
+			}
+
+			respBytes, err = io.ReadAll(resp.Body)
+			resp.Body.Close()
+			if err != nil {
+				return nil, fmt.Errorf("falha ao ler resposta da API do Gemini: %w", err)
+			}
+
+			lastStatus = resp.StatusCode
+			if resp.StatusCode == http.StatusOK {
+				success = true
+				usedModel = mName
+				usedVersion = apiVer
+				break
+			}
+
+			if resp.StatusCode == http.StatusNotFound {
+				continue
+			}
+
+			return nil, fmt.Errorf("Gemini API retornou status %d: %s", resp.StatusCode, string(respBytes))
 		}
-		req.Header.Set("Content-Type", "application/json")
-
-		resp, err := e.httpClient.Do(req)
-		if err != nil {
-			return nil, fmt.Errorf("falha na chamada HTTP para API do Gemini: %w", err)
-		}
-
-		respBytes, err = io.ReadAll(resp.Body)
-		resp.Body.Close()
-		if err != nil {
-			return nil, fmt.Errorf("falha ao ler resposta da API do Gemini: %w", err)
-		}
-
-		lastStatus = resp.StatusCode
-		if resp.StatusCode == http.StatusOK {
-			success = true
+		if success {
 			break
 		}
-
-		if resp.StatusCode == http.StatusNotFound {
-			log.Printf("[Extractor] Modelo '%s' indisponível (404), tentando fallback...", mName)
-			continue
-		}
-
-		return nil, fmt.Errorf("Gemini API retornou status %d: %s", resp.StatusCode, string(respBytes))
 	}
 
-	if !success {
+	if success {
+		log.Printf("[Extractor] Conexão bem-sucedida com modelo '%s' (%s)", usedModel, usedVersion)
+	} else {
+		// Diagnose available models from API key
+		diagURL := fmt.Sprintf("https://generativelanguage.googleapis.com/v1beta/models?key=%s", e.cfg.GeminiAPIKey)
+		if diagResp, err := e.httpClient.Get(diagURL); err == nil {
+			defer diagResp.Body.Close()
+			diagBytes, _ := io.ReadAll(diagResp.Body)
+			log.Printf("[Extractor] Diagnóstico de modelos disponíveis para esta chave: %s", string(diagBytes))
+		}
 		return nil, fmt.Errorf("Gemini API retornou status %d: %s", lastStatus, string(respBytes))
 	}
 
