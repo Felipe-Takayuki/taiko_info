@@ -43,7 +43,8 @@ RUN mkdir -p /app/data
 # Define variáveis de ambiente padrão
 ENV DB_PATH=/app/data/app.db \
     HTTP_PORT=8080 \
-    TIMEZONE=America/Sao_Paulo
+    TIMEZONE=America/Sao_Paulo \
+    TZ=America/Sao_Paulo
 
 EXPOSE 8080
 

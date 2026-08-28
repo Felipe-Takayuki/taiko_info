@@ -205,6 +205,15 @@ func (d *DB) SaveEventsAndMarkProcessed(ctx context.Context, events []Event, mes
 
 // GetAllEvents returns all events ordered by event_date descending.
 func (d *DB) GetAllEvents(ctx context.Context) ([]Event, error) {
+	return d.GetAllEventsInLocation(ctx, time.Local)
+}
+
+// GetAllEventsInLocation returns all events parsing date strings in the given timezone location.
+func (d *DB) GetAllEventsInLocation(ctx context.Context, loc *time.Location) ([]Event, error) {
+	if loc == nil {
+		loc = time.Local
+	}
+
 	query := `
 	SELECT id, title, description, event_date, source_sender, created_at
 	FROM events
@@ -223,10 +232,10 @@ func (d *DB) GetAllEvents(ctx context.Context) ([]Event, error) {
 		if err := rows.Scan(&e.ID, &e.Title, &e.Description, &eventDateStr, &e.SourceSender, &createdAtStr); err != nil {
 			return nil, err
 		}
-		if t, err := parseSQLiteTime(eventDateStr); err == nil {
+		if t, err := ParseSQLiteTimeInLocation(eventDateStr, loc); err == nil {
 			e.EventDate = t
 		}
-		if t, err := parseSQLiteTime(createdAtStr); err == nil {
+		if t, err := ParseSQLiteTimeInLocation(createdAtStr, loc); err == nil {
 			e.CreatedAt = t
 		}
 		events = append(events, e)
@@ -250,7 +259,18 @@ func (d *DB) GetStats(ctx context.Context) (totalEvents int, unprocessedMsgs int
 }
 
 func parseSQLiteTime(s string) (time.Time, error) {
+	return ParseSQLiteTimeInLocation(s, time.Local)
+}
+
+// ParseSQLiteTimeInLocation parses SQLite date strings preserving wall-clock time in loc.
+func ParseSQLiteTimeInLocation(s string, loc *time.Location) (time.Time, error) {
+	if loc == nil {
+		loc = time.Local
+	}
 	s = strings.TrimSpace(s)
+	sClean := strings.TrimSuffix(s, "Z")
+	sClean = strings.TrimSuffix(sClean, "z")
+
 	formats := []string{
 		"2006-01-02 15:04:05",
 		"2006-01-02T15:04:05",
@@ -258,12 +278,12 @@ func parseSQLiteTime(s string) (time.Time, error) {
 		"2006-01-02",
 	}
 	for _, f := range formats {
-		if t, err := time.ParseInLocation(f, s, time.Local); err == nil {
+		if t, err := time.ParseInLocation(f, sClean, loc); err == nil {
 			return t, nil
 		}
 	}
 	if t, err := time.Parse(time.RFC3339, s); err == nil {
-		return t.In(time.Local), nil
+		return t.In(loc), nil
 	}
 	return time.Time{}, fmt.Errorf("cannot parse time: %s", s)
 }

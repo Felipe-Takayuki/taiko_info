@@ -176,7 +176,7 @@ func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 	defer cancel()
 
-	events, err := s.database.GetAllEvents(ctx)
+	events, err := s.database.GetAllEventsInLocation(ctx, s.loc)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("Erro ao consultar eventos: %v", err), http.StatusInternalServerError)
 		return
@@ -227,7 +227,7 @@ func (s *Server) handleAPIEvents(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 	defer cancel()
 
-	events, err := s.database.GetAllEvents(ctx)
+	events, err := s.database.GetAllEventsInLocation(ctx, s.loc)
 	if err != nil {
 		http.Error(w, `{"error": "falha ao buscar eventos"}`, http.StatusInternalServerError)
 		return

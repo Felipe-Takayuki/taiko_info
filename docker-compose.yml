@@ -11,6 +11,7 @@ services:
       - DB_PATH=/app/data/app.db
       - HTTP_PORT=8080
       - TIMEZONE=${TIMEZONE:-America/Sao_Paulo}
+      - TZ=${TIMEZONE:-America/Sao_Paulo}
     volumes:
       - ./data:/app/data
     healthcheck:
