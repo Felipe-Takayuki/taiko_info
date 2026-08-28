@@ -28,9 +28,9 @@ func Load() *Config {
 		port = 8080
 	}
 
-	model := getEnv("GEMINI_MODEL", "gemini-1.5-flash")
+	model := getEnv("GEMINI_MODEL", "gemini-2.0-flash")
 	if model == "" {
-		model = "gemini-1.5-flash"
+		model = "gemini-2.0-flash"
 	}
 
 	return &Config{

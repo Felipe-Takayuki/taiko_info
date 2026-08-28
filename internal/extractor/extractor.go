@@ -207,28 +207,53 @@ Formato esperado de cada item:
 		return nil, fmt.Errorf("falha ao codificar payload para Gemini: %w", err)
 	}
 
-	model := e.cfg.GeminiModel
-	url := fmt.Sprintf("https://generativelanguage.googleapis.com/v1beta/models/%s:generateContent?key=%s", model, e.cfg.GeminiAPIKey)
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(bodyBytes))
-	if err != nil {
-		return nil, fmt.Errorf("falha ao criar requisição HTTP: %w", err)
-	}
-	req.Header.Set("Content-Type", "application/json")
-
-	resp, err := e.httpClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("falha na chamada HTTP para API do Gemini: %w", err)
-	}
-	defer resp.Body.Close()
-
-	respBytes, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("falha ao ler resposta da API do Gemini: %w", err)
+	model := strings.TrimPrefix(e.cfg.GeminiModel, "models/")
+	modelsToTry := []string{model}
+	for _, fallback := range []string{"gemini-2.0-flash", "gemini-2.5-flash", "gemini-1.5-flash-latest", "gemini-1.5-pro"} {
+		if fallback != model {
+			modelsToTry = append(modelsToTry, fallback)
+		}
 	}
 
-	if resp.StatusCode != http.StatusOK {
+	var respBytes []byte
+	var lastStatus int
+	var success bool
+
+	for _, mName := range modelsToTry {
+		url := fmt.Sprintf("https://generativelanguage.googleapis.com/v1beta/models/%s:generateContent?key=%s", mName, e.cfg.GeminiAPIKey)
+		req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(bodyBytes))
+		if err != nil {
+			return nil, fmt.Errorf("falha ao criar requisição HTTP: %w", err)
+		}
+		req.Header.Set("Content-Type", "application/json")
+
+		resp, err := e.httpClient.Do(req)
+		if err != nil {
+			return nil, fmt.Errorf("falha na chamada HTTP para API do Gemini: %w", err)
+		}
+
+		respBytes, err = io.ReadAll(resp.Body)
+		resp.Body.Close()
+		if err != nil {
+			return nil, fmt.Errorf("falha ao ler resposta da API do Gemini: %w", err)
+		}
+
+		lastStatus = resp.StatusCode
+		if resp.StatusCode == http.StatusOK {
+			success = true
+			break
+		}
+
+		if resp.StatusCode == http.StatusNotFound {
+			log.Printf("[Extractor] Modelo '%s' indisponível (404), tentando fallback...", mName)
+			continue
+		}
+
 		return nil, fmt.Errorf("Gemini API retornou status %d: %s", resp.StatusCode, string(respBytes))
+	}
+
+	if !success {
+		return nil, fmt.Errorf("Gemini API retornou status %d: %s", lastStatus, string(respBytes))
 	}
 
 	var geminiResp geminiResponse
