@@ -210,16 +210,12 @@ Formato esperado de cada item:
 	model := strings.TrimPrefix(e.cfg.GeminiModel, "models/")
 	modelsToTry := []string{model}
 	for _, fallback := range []string{
-		"gemini-1.5-flash-002",
-		"gemini-1.5-flash-001",
-		"gemini-1.5-flash-8b",
-		"gemini-2.0-flash-exp",
+		"gemini-2.5-flash",
+		"gemini-flash-latest",
+		"gemini-2.5-flash-lite",
+		"gemini-flash-lite-latest",
 		"gemini-2.0-flash",
 		"gemini-1.5-flash",
-		"gemini-1.5-pro-002",
-		"gemini-1.5-pro-001",
-		"gemini-1.5-pro",
-		"gemini-pro",
 	} {
 		if fallback != model {
 			modelsToTry = append(modelsToTry, fallback)
