@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"sort"
 	"syscall"
 	"time"
 
@@ -181,7 +182,7 @@ func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
 	var upcoming []db.Event
 	var past []db.Event
 
-	// Split events into upcoming and past relative to the end of the day or exact event time
+	// Split events into upcoming and past relative to the current time
 	for _, ev := range events {
 		evTime := ev.EventDate.In(s.loc)
 		if evTime.After(now.Add(-2 * time.Hour)) {
@@ -190,6 +191,16 @@ func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
 			past = append(past, ev)
 		}
 	}
+
+	// Upcoming events: closest/nearest date first (e.g. today -> tomorrow -> next month)
+	sort.Slice(upcoming, func(i, j int) bool {
+		return upcoming[i].EventDate.Before(upcoming[j].EventDate)
+	})
+
+	// Past events: most recently finished first (e.g. yesterday -> last week)
+	sort.Slice(past, func(i, j int) bool {
+		return past[i].EventDate.After(past[j].EventDate)
+	})
 
 	data := PageData{
 		UpcomingEvents: upcoming,
