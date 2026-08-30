@@ -1,12 +1,12 @@
-# 🥁 Taiko Info - Gerenciador Minimalista e Autônomo de Eventos WhatsApp
+# Ryuka Taiko Info - Gerenciador Autônomo de Eventos WhatsApp
 
 Sistema autônomo, robusto e de altíssimo desempenho desenvolvido em **100% Go (Golang)**, **SQLite** e **Google Gemini**, projetado para rodar em servidores de baixo consumo de recursos (Raspberry Pi, VPS com 512MB RAM, instâncias micro).
 
-O sistema escuta mensagens de um grupo específico do WhatsApp, armazena o histórico em um banco SQLite com modo WAL, extrai compromissos/ensaios/eventos usando LLM e disponibiliza um mural web responsivo e elegante em Dark Mode.
+O sistema escuta mensagens de um grupo específico do WhatsApp, armazena o histórico em um banco SQLite com modo WAL, extrai compromissos/ensaios/eventos usando LLM e disponibiliza um mural web responsivo e elegante com a identidade visual **Ryuka (Sousaku Eisa Taiko)** em Dark Mode.
 
 ---
 
-## 🏗️ Visão Geral da Arquitetura
+## Visão Geral da Arquitetura
 
 ```
                      ┌──────────────────────────────────────────────┐
@@ -41,7 +41,7 @@ O sistema escuta mensagens de um grupo específico do WhatsApp, armazena o hist�
 
 ---
 
-## 📁 Estrutura de Diretórios
+## Estrutura de Diretórios
 
 ```
 .
@@ -78,7 +78,7 @@ O sistema escuta mensagens de um grupo específico do WhatsApp, armazena o hist�
 
 ---
 
-## 🗄️ Esquema do Banco de Dados (app.db)
+## Esquema do Banco de Dados (app.db)
 
 O banco é inicializado automaticamente na primeira execução com pragmas de segurança e desempenho:
 
@@ -112,7 +112,7 @@ CREATE INDEX IF NOT EXISTS idx_events_date ON events(event_date);
 
 ---
 
-## ⚙️ Configuração (.env)
+## Configuração (.env)
 
 Crie seu arquivo `.env` baseado no modelo:
 
@@ -148,7 +148,7 @@ LOG_LEVEL=INFO
 
 ---
 
-## 🚀 Como Compilar e Executar
+## Como Compilar e Executar
 
 ### 1. Compilação (Binário único sem frameworks pesados)
 
@@ -193,7 +193,7 @@ Acesse no navegador: **`http://localhost:8080`**
 
 ---
 
-## ⏰ Agendamento Periódico (Semanal / Diário)
+## Agendamento Periódico (Semanal / Diário)
 
 ### Opção A: Usando Systemd Timers (Recomendado no Linux moderno)
 
@@ -231,7 +231,7 @@ Adicione uma linha ao crontab (`crontab -e`) para executar todo domingo às 03:0
 
 ---
 
-## 🧪 Testes Automatizados
+## Testes Automatizados
 
 Para rodar todos os testes de banco de dados, parsing de LLM e renderização HTTP:
 
@@ -241,7 +241,7 @@ go test -v ./...
 
 ---
 
-## 🛡️ Segurança e Eficiência de Recursos
+## Segurança e Eficiência de Recursos
 
 - **Zero Alocação Excessiva**: Binário Go compilado consome menos de 25MB de RAM em execução estável.
 - **SQLite Concorrência Segura**: Configurado com `WAL` (Write-Ahead Logging), `busy_timeout=5000` e pool serializado (`SetMaxOpenConns(1)` / transações atômicas com `BeginTx`) prevenindo deadlocks (`SQLITE_BUSY`).
