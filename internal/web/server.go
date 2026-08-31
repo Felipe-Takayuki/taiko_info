@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/signal"
 	"sort"
+	"strings"
 	"syscall"
 	"time"
 
@@ -31,12 +32,16 @@ type Server struct {
 
 // PageData represents the view-model for the index template.
 type PageData struct {
-	UpcomingEvents []db.Event
-	PastEvents     []db.Event
-	UpcomingCount  int
-	TotalEvents    int
-	ProcessedMsgs  int
-	CurrentTime    time.Time
+	UpcomingEvents    []db.Event
+	PastEvents        []db.Event
+	UpcomingCount     int
+	TotalEvents       int
+	ProcessedMsgs     int
+	CurrentTime       time.Time
+	CountAll          int
+	CountTreino       int
+	CountApresentacao int
+	CountGeral        int
 }
 
 // New creates and configures the Web Mural server.
@@ -47,6 +52,26 @@ func New(cfg *config.Config, database *db.DB) (*Server, error) {
 	}
 
 	funcMap := template.FuncMap{
+		"formatCategory": func(cat string) string {
+			switch strings.ToLower(strings.TrimSpace(cat)) {
+			case "apresentacao", "apresentação":
+				return "Apresentação"
+			case "treino", "ensaio":
+				return "Treino"
+			default:
+				return "Geral"
+			}
+		},
+		"categoryClass": func(cat string) string {
+			switch strings.ToLower(strings.TrimSpace(cat)) {
+			case "apresentacao", "apresentação":
+				return "cat-apresentacao"
+			case "treino", "ensaio":
+				return "cat-treino"
+			default:
+				return "cat-geral"
+			}
+		},
 		"formatMonth": func(t time.Time) string {
 			months := []string{"JAN", "FEV", "MAR", "ABR", "MAI", "JUN", "JUL", "AGO", "SET", "OUT", "NOV", "DEZ"}
 			return months[t.In(loc).Month()-1]
@@ -187,9 +212,18 @@ func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
 	now := time.Now().In(s.loc)
 	var upcoming []db.Event
 	var past []db.Event
+	var countTreino, countApresentacao, countGeral int
 
-	// Split events into upcoming and past relative to the current time
 	for _, ev := range events {
+		switch strings.ToLower(strings.TrimSpace(ev.Category)) {
+		case "apresentacao", "apresentação":
+			countApresentacao++
+		case "treino", "ensaio":
+			countTreino++
+		default:
+			countGeral++
+		}
+
 		evTime := ev.EventDate.In(s.loc)
 		if evTime.After(now.Add(-2 * time.Hour)) {
 			upcoming = append(upcoming, ev)
@@ -209,12 +243,16 @@ func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
 	})
 
 	data := PageData{
-		UpcomingEvents: upcoming,
-		PastEvents:     past,
-		UpcomingCount:  len(upcoming),
-		TotalEvents:    totalEvents,
-		ProcessedMsgs:  processedMsgs,
-		CurrentTime:    now,
+		UpcomingEvents:    upcoming,
+		PastEvents:        past,
+		UpcomingCount:     len(upcoming),
+		TotalEvents:       totalEvents,
+		ProcessedMsgs:     processedMsgs,
+		CurrentTime:       now,
+		CountAll:          len(events),
+		CountTreino:       countTreino,
+		CountApresentacao: countApresentacao,
+		CountGeral:        countGeral,
 	}
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")

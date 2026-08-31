@@ -72,8 +72,34 @@ func TestExtractedJSONParsing(t *testing.T) {
 	}
 }
 
+func TestNormalizeCategory(t *testing.T) {
+	tests := []struct {
+		input    string
+		expected string
+	}{
+		{"Apresentação", "apresentacao"},
+		{"apresentacao", "apresentacao"},
+		{"Show no parque", "apresentacao"},
+		{"Festival de Inverno", "apresentacao"},
+		{"Treino", "treino"},
+		{"treino de taiko", "treino"},
+		{"Ensaio Geral", "treino"},
+		{"Oficina de postura", "treino"},
+		{"Reunião financeira", "geral"},
+		{"Avisos", "geral"},
+		{"", "geral"},
+	}
+
+	for _, tt := range tests {
+		got := normalizeCategory(tt.input)
+		if got != tt.expected {
+			t.Errorf("normalizeCategory(%q) = %q; want %q", tt.input, got, tt.expected)
+		}
+	}
+}
+
 func TestExtractedJSONMarkdownFenceStripping(t *testing.T) {
-	rawResponse := "```json\n[\n  {\"title\": \"Teste\", \"description\": \"Desc\", \"event_date\": \"2026-08-30T10:00:00Z\", \"source_sender\": \"Admin\"}\n]\n```"
+	rawResponse := "```json\n[\n  {\"title\": \"Teste\", \"description\": \"Desc\", \"category\": \"treino\", \"event_date\": \"2026-08-30T10:00:00Z\", \"source_sender\": \"Admin\"}\n]\n```"
 
 	cleaned := strings.TrimSpace(rawResponse)
 	cleaned = strings.TrimPrefix(cleaned, "```json")
@@ -86,7 +112,7 @@ func TestExtractedJSONMarkdownFenceStripping(t *testing.T) {
 		t.Fatalf("Failed to parse cleaned markdown-fenced json: %v", err)
 	}
 
-	if len(dtos) != 1 || dtos[0].Title != "Teste" {
+	if len(dtos) != 1 || dtos[0].Title != "Teste" || dtos[0].Category != "treino" {
 		t.Fatalf("Unexpected parsed content: %+v", dtos)
 	}
 }

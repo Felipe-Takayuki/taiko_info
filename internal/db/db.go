@@ -26,6 +26,7 @@ type Event struct {
 	ID           int64     `json:"id"`
 	Title        string    `json:"title"`
 	Description  string    `json:"description"`
+	Category     string    `json:"category"` // "apresentacao", "treino", "geral"
 	EventDate    time.Time `json:"event_date"`
 	SourceSender string    `json:"source_sender"`
 	CreatedAt    time.Time `json:"created_at"`
@@ -93,6 +94,7 @@ func (d *DB) migrate(ctx context.Context) error {
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
 		title TEXT NOT NULL,
 		description TEXT,
+		category TEXT NOT NULL DEFAULT 'geral',
 		event_date DATETIME NOT NULL,
 		source_sender TEXT,
 		created_at DATETIME DEFAULT CURRENT_TIMESTAMP
@@ -100,8 +102,25 @@ func (d *DB) migrate(ctx context.Context) error {
 
 	CREATE INDEX IF NOT EXISTS idx_events_date ON events(event_date);
 	`
-	_, err := d.ExecContext(ctx, schema)
-	return err
+	if _, err := d.ExecContext(ctx, schema); err != nil {
+		return err
+	}
+
+	// Safe migration for pre-existing databases that might be missing the category column
+	var count int
+	_ = d.QueryRowContext(ctx, `SELECT count(*) FROM pragma_table_info('events') WHERE name='category'`).Scan(&count)
+	if count == 0 {
+		if _, err := d.ExecContext(ctx, `ALTER TABLE events ADD COLUMN category TEXT NOT NULL DEFAULT 'geral'`); err != nil {
+			return fmt.Errorf("failed to add category column: %w", err)
+		}
+	}
+
+	// Create index on category after column is guaranteed to exist
+	if _, err := d.ExecContext(ctx, `CREATE INDEX IF NOT EXISTS idx_events_category ON events(category);`); err != nil {
+		return fmt.Errorf("failed to create category index: %w", err)
+	}
+
+	return nil
 }
 
 // SaveMessage stores an incoming WhatsApp message into the database.
@@ -169,8 +188,8 @@ func (d *DB) SaveEventsAndMarkProcessed(ctx context.Context, events []Event, mes
 
 	if len(events) > 0 {
 		stmtEvent, err := tx.PrepareContext(ctx, `
-			INSERT INTO events (title, description, event_date, source_sender, created_at)
-			VALUES (?, ?, ?, ?, ?)
+			INSERT INTO events (title, description, category, event_date, source_sender, created_at)
+			VALUES (?, ?, ?, ?, ?, ?)
 		`)
 		if err != nil {
 			return fmt.Errorf("prepare event insert failed: %w", err)
@@ -180,7 +199,11 @@ func (d *DB) SaveEventsAndMarkProcessed(ctx context.Context, events []Event, mes
 		now := time.Now().Format("2006-01-02 15:04:05")
 		for _, e := range events {
 			eventDateStr := e.EventDate.Format("2006-01-02 15:04:05")
-			if _, err := stmtEvent.ExecContext(ctx, e.Title, e.Description, eventDateStr, e.SourceSender, now); err != nil {
+			category := strings.TrimSpace(strings.ToLower(e.Category))
+			if category == "" {
+				category = "geral"
+			}
+			if _, err := stmtEvent.ExecContext(ctx, e.Title, e.Description, category, eventDateStr, e.SourceSender, now); err != nil {
 				return fmt.Errorf("insert event failed: %w", err)
 			}
 		}
@@ -215,7 +238,7 @@ func (d *DB) GetAllEventsInLocation(ctx context.Context, loc *time.Location) ([]
 	}
 
 	query := `
-	SELECT id, title, description, event_date, source_sender, created_at
+	SELECT id, title, description, category, event_date, source_sender, created_at
 	FROM events
 	ORDER BY event_date DESC
 	`
@@ -229,8 +252,11 @@ func (d *DB) GetAllEventsInLocation(ctx context.Context, loc *time.Location) ([]
 	for rows.Next() {
 		var e Event
 		var eventDateStr, createdAtStr string
-		if err := rows.Scan(&e.ID, &e.Title, &e.Description, &eventDateStr, &e.SourceSender, &createdAtStr); err != nil {
+		if err := rows.Scan(&e.ID, &e.Title, &e.Description, &e.Category, &eventDateStr, &e.SourceSender, &createdAtStr); err != nil {
 			return nil, err
+		}
+		if e.Category == "" {
+			e.Category = "geral"
 		}
 		if t, err := ParseSQLiteTimeInLocation(eventDateStr, loc); err == nil {
 			e.EventDate = t

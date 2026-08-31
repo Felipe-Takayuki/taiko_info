@@ -20,8 +20,22 @@ import (
 type ExtractedEventDTO struct {
 	Title        string `json:"title"`
 	Description  string `json:"description"`
+	Category     string `json:"category"` // "apresentacao", "treino", "geral"
 	EventDate    string `json:"event_date"` // ISO 8601 string
 	SourceSender string `json:"source_sender"`
+}
+
+// normalizeCategory standardizes the category string to "apresentacao", "treino", or "geral".
+func normalizeCategory(raw string) string {
+	s := strings.ToLower(strings.TrimSpace(raw))
+	switch {
+	case strings.Contains(s, "apresent") || strings.Contains(s, "show") || strings.Contains(s, "festival") || strings.Contains(s, "demonstra"):
+		return "apresentacao"
+	case strings.Contains(s, "trein") || strings.Contains(s, "ensaio") || strings.Contains(s, "oficina") || strings.Contains(s, "pratic"):
+		return "treino"
+	default:
+		return "geral"
+	}
 }
 
 // Extractor orchestrates message reading, LLM processing, and event persistence.
@@ -98,6 +112,7 @@ func (e *Extractor) Run(ctx context.Context) error {
 		eventsToSave = append(eventsToSave, db.Event{
 			Title:        strings.TrimSpace(dto.Title),
 			Description:  strings.TrimSpace(dto.Description),
+			Category:     normalizeCategory(dto.Category),
 			EventDate:    eventTime,
 			SourceSender: strings.TrimSpace(dto.SourceSender),
 		})
@@ -174,13 +189,18 @@ Diretrizes Obrigatórias:
 2. Identifique todos os eventos futuros ou compromissos combinados pelos participantes.
 3. Se a mensagem mencionar um horário (ex: "19:30", "15:00", "às 14h"), preserve ESTRITAMENTE esse horário local no campo 'event_date' formatado como 'YYYY-MM-DDTHH:MM:SS' (NÃO subtraia horas e NÃO adicione Z). Se o ano não for mencionado, assuma o ano corrente.
 4. Extraia quem propôs ou confirmou a informação em 'source_sender'.
-5. Se nenhuma mensagem contiver eventos ou compromissos agendados, retorne uma lista JSON vazia: []
-6. Responda ESTRITAMENTE um array JSON válido sem markdown ou blocos de código adicionais.
+5. Categorize cada evento no campo 'category' como:
+   - "apresentacao" para apresentações públicas, shows, festivais, demonstrações e eventos culturais;
+   - "treino" para ensaios, ensaio geral, treinos técnicos e oficinas práticas de taiko;
+   - "geral" para reuniões de alinhamento, decisões financeiras, confraternizações e avisos gerais.
+6. Se nenhuma mensagem contiver eventos ou compromissos agendados, retorne uma lista JSON vazia: []
+7. Responda ESTRITAMENTE um array JSON válido sem markdown ou blocos de código adicionais.
 
 Formato esperado de cada item:
 {
   "title": "Título conciso do evento (ex: Ensaio Geral de Taiko, Apresentação no Festival)",
   "description": "Detalhes como local, horário completo, o que levar, observações relevantes",
+  "category": "apresentacao | treino | geral",
   "event_date": "2026-08-30T19:30:00",
   "source_sender": "Nome/Número do participante que anunciou"
 }`, now.Format("2006-01-02 15:04:05"), now.Weekday().String(), e.cfg.ReferenceTZ)

@@ -79,24 +79,28 @@ func main() {
 		{
 			Title:        "Ensaio Geral - Festival da Primavera",
 			Description:  "Ensaio na sede com todos os instrumentos. Levar bachi e uniforme completo.",
+			Category:     "treino",
 			EventDate:    now.Add(48 * time.Hour), // Futuro próximo
 			SourceSender: "Carlos Sensei (5511988881111)",
 		},
 		{
 			Title:        "Apresentação no Festival de Verão",
 			Description:  "Apresentação principal do grupo no Parque da Cidade.",
+			Category:     "apresentacao",
 			EventDate:    now.Add(15 * 24 * time.Hour), // Futuro
 			SourceSender: "Renato - Diretoria (5511966663333)",
 		},
 		{
 			Title:        "Reunião de Alinhamento Financeiro",
 			Description:  "Reunião de planejamento por videoconferência via Google Meet.",
+			Category:     "geral",
 			EventDate:    now.Add(5 * 24 * time.Hour),
 			SourceSender: "Ana Paula (5511955554444)",
 		},
 		{
 			Title:        "Oficina Básica de Taiko para Iniciantes",
 			Description:  "Treinamento de postura e ritmo com os novos integrantes.",
+			Category:     "treino",
 			EventDate:    now.Add(-7 * 24 * time.Hour), // Evento passado
 			SourceSender: "Carlos Sensei (5511988881111)",
 		},

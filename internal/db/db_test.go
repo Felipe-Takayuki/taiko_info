@@ -77,6 +77,7 @@ func TestDB_SaveEventsAndMarkProcessed(t *testing.T) {
 		{
 			Title:        "Reunião de Diretoria",
 			Description:  "Alinhamento geral do grupo",
+			Category:     "geral",
 			EventDate:    eventDate,
 			SourceSender: "Ana",
 		},
@@ -106,8 +107,8 @@ func TestDB_SaveEventsAndMarkProcessed(t *testing.T) {
 	if len(allEvents) != 1 {
 		t.Fatalf("Expected 1 event, got %d", len(allEvents))
 	}
-	if allEvents[0].Title != "Reunião de Diretoria" {
-		t.Errorf("Unexpected event title: %s", allEvents[0].Title)
+	if allEvents[0].Title != "Reunião de Diretoria" || allEvents[0].Category != "geral" {
+		t.Errorf("Unexpected event: %+v", allEvents[0])
 	}
 
 	totalEvents, unprocessedCount, processedCount, err := database.GetStats(ctx)

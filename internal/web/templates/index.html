@@ -26,6 +26,18 @@
             
             --accent-crimson: #c23616;
             --accent-crimson-glow: rgba(194, 54, 22, 0.2);
+            --accent-crimson-bg: rgba(194, 54, 22, 0.12);
+            --accent-crimson-border: rgba(194, 54, 22, 0.35);
+            --accent-crimson-text: #fca5a5;
+
+            --accent-treino-bg: rgba(255, 255, 255, 0.08);
+            --accent-treino-border: rgba(255, 255, 255, 0.22);
+            --accent-treino-text: #ffffff;
+
+            --accent-geral-bg: rgba(255, 255, 255, 0.04);
+            --accent-geral-border: rgba(255, 255, 255, 0.1);
+            --accent-geral-text: #a1a1aa;
+            
             --accent-gold: #d4af37;
             --accent-green: #22c55e;
             --accent-green-bg: rgba(34, 197, 94, 0.08);
@@ -67,7 +79,7 @@
             display: flex;
             flex-direction: column;
             gap: 2rem;
-            margin-bottom: 2.5rem;
+            margin-bottom: 2rem;
             padding-bottom: 2rem;
             border-bottom: 1px solid var(--border-subtle);
             position: relative;
@@ -253,6 +265,95 @@
             text-shadow: 0 0 20px rgba(255, 255, 255, 0.25);
         }
 
+        /* Filter Controls */
+        .filter-section {
+            margin-bottom: 2rem;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            flex-wrap: wrap;
+            gap: 1rem;
+            background: #0e0e12;
+            border: 1px solid var(--border-subtle);
+            border-radius: 12px;
+            padding: 0.75rem 1.25rem;
+        }
+
+        .filter-header {
+            display: flex;
+            align-items: center;
+            gap: 0.6rem;
+            font-family: var(--font-heading);
+            font-size: 0.8rem;
+            text-transform: uppercase;
+            letter-spacing: 0.12em;
+            color: var(--text-muted);
+            font-weight: 600;
+        }
+
+        .filter-header svg {
+            width: 16px;
+            height: 16px;
+            stroke: var(--text-subtle);
+        }
+
+        .filter-tabs {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            flex-wrap: wrap;
+        }
+
+        .filter-btn {
+            background: #141419;
+            border: 1px solid var(--border-subtle);
+            color: var(--text-muted);
+            padding: 0.45rem 0.9rem;
+            border-radius: 8px;
+            font-family: var(--font-main);
+            font-size: 0.82rem;
+            font-weight: 600;
+            letter-spacing: 0.02em;
+            cursor: pointer;
+            display: inline-flex;
+            align-items: center;
+            gap: 0.45rem;
+            transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+            user-select: none;
+        }
+
+        .filter-btn:hover {
+            color: var(--text-primary);
+            border-color: var(--border-medium);
+            background: #1b1b22;
+        }
+
+        .filter-btn.active {
+            background: #22222b;
+            color: #ffffff;
+            border-color: var(--border-hover);
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.4);
+        }
+
+        .filter-btn.active.btn-apresentacao {
+            border-color: var(--accent-crimson-border);
+            color: var(--accent-crimson-text);
+        }
+
+        .filter-count {
+            background: rgba(255, 255, 255, 0.08);
+            color: var(--text-secondary);
+            font-size: 0.72rem;
+            padding: 0.1rem 0.4rem;
+            border-radius: 9999px;
+            font-weight: 700;
+        }
+
+        .filter-btn.active .filter-count {
+            background: rgba(255, 255, 255, 0.18);
+            color: #ffffff;
+        }
+
         /* Section Headings */
         .section-header {
             display: flex;
@@ -327,6 +428,10 @@
         .event-card.past:hover {
             opacity: 0.9;
             border-color: var(--border-subtle);
+        }
+
+        .event-card.is-filtered-out {
+            display: none !important;
         }
 
         /* Event Date Box */
@@ -420,6 +525,32 @@
             height: 13px;
         }
 
+        /* Category Specific Badges */
+        .tag-cat {
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
+            font-size: 0.7rem;
+        }
+
+        .tag-cat-apresentacao {
+            background: var(--accent-crimson-bg);
+            color: var(--accent-crimson-text);
+            border: 1px solid var(--accent-crimson-border);
+        }
+
+        .tag-cat-treino {
+            background: var(--accent-treino-bg);
+            color: var(--accent-treino-text);
+            border: 1px solid var(--accent-treino-border);
+        }
+
+        .tag-cat-geral {
+            background: var(--accent-geral-bg);
+            color: var(--accent-geral-text);
+            border: 1px solid var(--accent-geral-border);
+        }
+
         .tag-time {
             background: rgba(255, 255, 255, 0.06);
             color: var(--text-primary);
@@ -475,6 +606,18 @@
             display: inline-flex;
             align-items: center;
             gap: 0.35rem;
+        }
+
+        /* Filter Empty Notice */
+        .filter-empty-notice {
+            background: var(--bg-surface);
+            border: 1px dashed var(--border-subtle);
+            border-radius: 12px;
+            padding: 2.5rem 1.5rem;
+            text-align: center;
+            color: var(--text-muted);
+            font-size: 0.9rem;
+            display: none;
         }
 
         /* Empty State */
@@ -551,6 +694,17 @@
             .brand-logo-main {
                 font-size: 1.75rem;
             }
+            .filter-section {
+                flex-direction: column;
+                align-items: flex-start;
+            }
+            .filter-tabs {
+                width: 100%;
+            }
+            .filter-btn {
+                flex: 1 1 calc(50% - 0.25rem);
+                justify-content: center;
+            }
             .event-card {
                 flex-direction: column;
                 gap: 1rem;
@@ -590,8 +744,14 @@
                     <div class="brand-titles">
                         <div class="brand-logo-text">
                             <span class="brand-logo-main">Ryuka</span>
+                            <span class="brand-seal">琉球</span>
                         </div>
-                        <div class="brand-subtitle">Mural de Eventos</div>
+                        <div class="brand-subtitle">SOUSAKU EISA TAIKO</div>
+                        <div class="brand-board-tag">
+                            <span>Mural de Eventos</span>
+                            <span>&bull;</span>
+                            <span>Sincronização Contínua</span>
+                        </div>
                     </div>
                 </div>
 
@@ -628,12 +788,50 @@
                     <span class="metric-value">{{.TotalEvents}}</span>
                 </div>
 
+                <div class="metric-card">
+                    <div class="metric-header">
+                        <span class="metric-label">Mensagens Processadas</span>
+                        <svg class="metric-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+                        </svg>
+                    </div>
+                    <span class="metric-value">{{.ProcessedMsgs}}</span>
+                </div>
+            </div>
         </header>
+
+        <!-- Category Filter Section -->
+        <section class="filter-section" aria-label="Filtro de categorias">
+            <div class="filter-header">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon>
+                </svg>
+                <span>Filtro de Categoria</span>
+            </div>
+            <div class="filter-tabs" role="tablist">
+                <button class="filter-btn active" data-filter="all" role="tab" aria-selected="true">
+                    <span>Todos</span>
+                    <span class="filter-count">{{.CountAll}}</span>
+                </button>
+                <button class="filter-btn btn-treino" data-filter="treino" role="tab" aria-selected="false">
+                    <span>Treinos</span>
+                    <span class="filter-count">{{.CountTreino}}</span>
+                </button>
+                <button class="filter-btn btn-apresentacao" data-filter="apresentacao" role="tab" aria-selected="false">
+                    <span>Apresentações</span>
+                    <span class="filter-count">{{.CountApresentacao}}</span>
+                </button>
+                <button class="filter-btn btn-geral" data-filter="geral" role="tab" aria-selected="false">
+                    <span>Geral</span>
+                    <span class="filter-count">{{.CountGeral}}</span>
+                </button>
+            </div>
+        </section>
 
         <!-- Main Events Feed -->
         <main>
             {{if .UpcomingEvents}}
-                <div class="section-header">
+                <div class="section-header" id="upcoming-section-header">
                     <h2 class="section-title">
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                             <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
@@ -643,12 +841,12 @@
                         </svg>
                         Próximos Compromissos
                     </h2>
-                    <span class="section-count">{{len .UpcomingEvents}} agendado(s)</span>
+                    <span class="section-count" id="upcoming-counter">{{len .UpcomingEvents}} agendado(s)</span>
                 </div>
 
-                <div class="events-grid">
+                <div class="events-grid" id="upcoming-grid">
                     {{range .UpcomingEvents}}
-                        <article class="event-card">
+                        <article class="event-card" data-category="{{.Category}}">
                             <div class="event-date-box">
                                 <span class="event-month">{{.EventDate | formatMonth}}</span>
                                 <span class="event-day">{{.EventDate | formatDay}}</span>
@@ -658,6 +856,9 @@
                                 <div class="event-header">
                                     <h3 class="event-title">{{.Title}}</h3>
                                     <div class="event-tags">
+                                        <span class="tag tag-cat tag-cat-{{.Category}}">
+                                            {{.Category | formatCategory}}
+                                        </span>
                                         <span class="tag tag-time">
                                             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                                                 <circle cx="12" cy="12" r="10"></circle>
@@ -687,10 +888,13 @@
                         </article>
                     {{end}}
                 </div>
+                <div class="filter-empty-notice" id="upcoming-filter-empty">
+                    Nenhum próximo compromisso encontrado nesta categoria.
+                </div>
             {{end}}
 
             {{if .PastEvents}}
-                <div class="section-header" style="margin-top: 3.5rem;">
+                <div class="section-header" id="past-section-header" style="margin-top: 3.5rem;">
                     <h2 class="section-title" style="color: var(--text-muted);">
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                             <polyline points="21 8 21 21 3 21 3 8"></polyline>
@@ -699,12 +903,12 @@
                         </svg>
                         Eventos Anteriores
                     </h2>
-                    <span class="section-count">{{len .PastEvents}} concluído(s)</span>
+                    <span class="section-count" id="past-counter">{{len .PastEvents}} concluído(s)</span>
                 </div>
 
-                <div class="events-grid">
+                <div class="events-grid" id="past-grid">
                     {{range .PastEvents}}
-                        <article class="event-card past">
+                        <article class="event-card past" data-category="{{.Category}}">
                             <div class="event-date-box">
                                 <span class="event-month">{{.EventDate | formatMonth}}</span>
                                 <span class="event-day">{{.EventDate | formatDay}}</span>
@@ -714,6 +918,9 @@
                                 <div class="event-header">
                                     <h3 class="event-title">{{.Title}}</h3>
                                     <div class="event-tags">
+                                        <span class="tag tag-cat tag-cat-{{.Category}}">
+                                            {{.Category | formatCategory}}
+                                        </span>
                                         <span class="tag tag-past">
                                             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                                                 <circle cx="12" cy="12" r="10"></circle>
@@ -743,6 +950,9 @@
                         </article>
                     {{end}}
                 </div>
+                <div class="filter-empty-notice" id="past-filter-empty">
+                    Nenhum evento anterior encontrado nesta categoria.
+                </div>
             {{end}}
 
             {{if and (not .UpcomingEvents) (not .PastEvents)}}
@@ -769,5 +979,86 @@
             <p>Sincronizado automaticamente via IA &bull; Atualizado em {{.CurrentTime | formatFullDate}}</p>
         </footer>
     </div>
+
+    <!-- Client-side Interactive Filter Script -->
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const filterButtons = document.querySelectorAll('.filter-btn');
+            const allCards = document.querySelectorAll('.event-card');
+            const upcomingGrid = document.getElementById('upcoming-grid');
+            const pastGrid = document.getElementById('past-grid');
+            const upcomingCounter = document.getElementById('upcoming-counter');
+            const pastCounter = document.getElementById('past-counter');
+            const upcomingEmptyNotice = document.getElementById('upcoming-filter-empty');
+            const pastEmptyNotice = document.getElementById('past-filter-empty');
+
+            function applyFilter(category) {
+                // Update active tab states
+                filterButtons.forEach(btn => {
+                    const isActive = btn.getAttribute('data-filter') === category;
+                    btn.classList.toggle('active', isActive);
+                    btn.setAttribute('aria-selected', isActive ? 'true' : 'false');
+                });
+
+                let visibleUpcoming = 0;
+                let visiblePast = 0;
+
+                allCards.forEach(card => {
+                    const cardCat = (card.getAttribute('data-category') || 'geral').toLowerCase();
+                    const matches = (category === 'all' || cardCat === category);
+                    
+                    card.classList.toggle('is-filtered-out', !matches);
+
+                    if (matches) {
+                        if (card.closest('#upcoming-grid')) {
+                            visibleUpcoming++;
+                        } else if (card.closest('#past-grid')) {
+                            visiblePast++;
+                        }
+                    }
+                });
+
+                // Update section counters
+                if (upcomingCounter) {
+                    upcomingCounter.textContent = `${visibleUpcoming} agendado(s)`;
+                }
+                if (pastCounter) {
+                    pastCounter.textContent = `${visiblePast} concluído(s)`;
+                }
+
+                // Show/hide empty notices
+                if (upcomingEmptyNotice) {
+                    upcomingEmptyNotice.style.display = (visibleUpcoming === 0 && allCards.length > 0) ? 'block' : 'none';
+                }
+                if (pastEmptyNotice) {
+                    pastEmptyNotice.style.display = (visiblePast === 0 && allCards.length > 0) ? 'block' : 'none';
+                }
+
+                // Update URL search parameter smoothly
+                const url = new URL(window.location.href);
+                if (category === 'all') {
+                    url.searchParams.delete('category');
+                } else {
+                    url.searchParams.set('category', category);
+                }
+                window.history.replaceState({}, '', url.toString());
+            }
+
+            // Click listener for filter buttons
+            filterButtons.forEach(btn => {
+                btn.addEventListener('click', () => {
+                    const filter = btn.getAttribute('data-filter');
+                    applyFilter(filter);
+                });
+            });
+
+            // Initialize filter from URL if present
+            const params = new URLSearchParams(window.location.search);
+            const initialCategory = params.get('category');
+            if (initialCategory && ['apresentacao', 'treino', 'geral'].includes(initialCategory.toLowerCase())) {
+                applyFilter(initialCategory.toLowerCase());
+            }
+        });
+    </script>
 </body>
 </html>
