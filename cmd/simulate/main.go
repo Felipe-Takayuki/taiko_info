@@ -118,14 +118,52 @@ func main() {
 	fmt.Printf("✔ Transação concluída com sucesso! %d eventos gravados e %d mensagens marcadas como processed = 1.\n",
 		len(simulatedEvents), len(msgIDs))
 
-	// 4. Exibir métricas finais
+	// 4. Simular recebimento de mensagem com ALTERAÇÃO DE DATA
+	fmt.Println("\n--- 4. Simulando nova mensagem de alteração de data (reagendamento de evento) ---")
+	updateMsgID := "WA-SIM-005"
+	updateMsgText := "ATENÇÃO: Mudamos a data do Ensaio Geral - Festival da Primavera para o domingo seguinte às 16:00!"
+	err = database.SaveMessage(ctx, updateMsgID, "Carlos Sensei (5511988881111)", updateMsgText, now)
+	if err != nil {
+		log.Fatalf("Erro ao salvar mensagem de alteração: %v", err)
+	}
+	fmt.Printf("✔ [Mensagem Capturada] [%s] Carlos Sensei: %s\n", updateMsgID, updateMsgText)
+
+	// Buscar eventos existentes
+	allEventsBeforeUpdate, _ := database.GetAllEvents(ctx)
+	var targetEventID int64
+	for _, ev := range allEventsBeforeUpdate {
+		if ev.Title == "Ensaio Geral - Festival da Primavera" {
+			targetEventID = ev.ID
+			break
+		}
+	}
+
+	// Simular extração do Gemini com ID de evento existente (ação update)
+	newDate := now.Add(72 * time.Hour)
+	updatedEvent := db.Event{
+		ID:           targetEventID, // ID do evento já existente
+		Title:        "Ensaio Geral - Festival da Primavera",
+		Description:  "Ensaio adiado para domingo às 16:00 na sede. Levar bachi e uniforme.",
+		Category:     "treino",
+		EventDate:    newDate,
+		SourceSender: "Carlos Sensei (5511988881111)",
+	}
+
+	err = database.SaveEventsAndMarkProcessed(ctx, []db.Event{updatedEvent}, []string{updateMsgID})
+	if err != nil {
+		log.Fatalf("Erro na atualização do evento: %v", err)
+	}
+	fmt.Printf("✔ Transação de alteração concluída! Evento ID %d atualizado para nova data (%s) sem criar duplicatas.\n",
+		targetEventID, newDate.Format("2006-01-02 15:04:05"))
+
+	// 5. Exibir métricas finais
 	totalEvents, pendingMsgs, processedMsgs, err := database.GetStats(ctx)
 	if err != nil {
 		log.Fatalf("Erro ao consultar métricas: %v", err)
 	}
 
-	fmt.Println("\n--- 4. Resumo no Banco SQLite (app.db) ---")
-	fmt.Printf("• Total de Eventos Registrados: %d\n", totalEvents)
+	fmt.Println("\n--- 5. Resumo no Banco SQLite (app.db) ---")
+	fmt.Printf("• Total de Eventos Registrados: %d (sem duplicatas após alteração de data)\n", totalEvents)
 	fmt.Printf("• Mensagens Pendentes: %d\n", pendingMsgs)
 	fmt.Printf("• Mensagens Processadas: %d\n", processedMsgs)
 	fmt.Println("\n=== [SIMULAÇÃO CONCLUÍDA COM SUCESSO] ===")

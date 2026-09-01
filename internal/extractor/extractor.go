@@ -18,11 +18,68 @@ import (
 
 // ExtractedEventDTO defines the expected JSON output format from the LLM.
 type ExtractedEventDTO struct {
+	ID           *int64 `json:"id,omitempty"`
+	Action       string `json:"action,omitempty"` // "create", "update"
 	Title        string `json:"title"`
 	Description  string `json:"description"`
 	Category     string `json:"category"` // "apresentacao", "treino", "geral"
 	EventDate    string `json:"event_date"` // ISO 8601 string
 	SourceSender string `json:"source_sender"`
+}
+
+// UnmarshalJSON customizes unmarshaling to gracefully handle diverse id representations (integer, float, string, or null).
+func (d *ExtractedEventDTO) UnmarshalJSON(data []byte) error {
+	type Alias ExtractedEventDTO
+	aux := &struct {
+		RawID any `json:"id"`
+		*Alias
+	}{
+		Alias: (*Alias)(d),
+	}
+	if err := json.Unmarshal(data, aux); err != nil {
+		return err
+	}
+	if aux.RawID != nil {
+		switch v := aux.RawID.(type) {
+		case float64:
+			if v > 0 {
+				id := int64(v)
+				d.ID = &id
+			}
+		case int64:
+			if v > 0 {
+				d.ID = &v
+			}
+		case int:
+			if v > 0 {
+				id := int64(v)
+				d.ID = &id
+			}
+		case string:
+			v = strings.TrimSpace(v)
+			if v != "" && v != "null" && v != "0" {
+				var parsed int64
+				if _, err := fmt.Sscanf(v, "%d", &parsed); err == nil && parsed > 0 {
+					d.ID = &parsed
+				}
+			}
+		}
+	}
+	return nil
+}
+
+// formatExistingEvents formats current events into a clean reference list for LLM context.
+func formatExistingEvents(events []db.Event, loc *time.Location) string {
+	if len(events) == 0 {
+		return "(Nenhum evento previamente cadastrado no banco de dados)"
+	}
+	var sb strings.Builder
+	for _, ev := range events {
+		dateStr := ev.EventDate.In(loc).Format("2006-01-02 15:04:05")
+		sb.WriteString(fmt.Sprintf("- [ID: %d] Título: %q | Categoria: %s | Data/Hora: %s | Descrição: %q | Informado por: %q\n",
+			ev.ID, ev.Title, ev.Category, dateStr, ev.Description, ev.SourceSender))
+	}
+	return sb.String()
 }
 
 // normalizeCategory standardizes the category string to "apresentacao", "treino", or "geral".
@@ -72,6 +129,18 @@ func (e *Extractor) Run(ctx context.Context) error {
 
 	log.Printf("[Extractor] %d mensagem(ns) pendente(s) encontrada(s). Preparando chamada para LLM...", len(messages))
 
+	loc, _ := time.LoadLocation(e.cfg.ReferenceTZ)
+	if loc == nil {
+		loc = time.Local
+	}
+
+	// Fetch existing events so LLM can identify and update changed dates instead of creating duplicates
+	existingEvents, err := e.database.GetAllEventsInLocation(ctx, loc)
+	if err != nil {
+		log.Printf("[Extractor] Aviso: falha ao consultar eventos existentes para contexto: %v", err)
+		existingEvents = nil
+	}
+
 	// Collect message IDs for transaction marking
 	var msgIDs []string
 	var transcriptBuilder strings.Builder
@@ -82,21 +151,24 @@ func (e *Extractor) Run(ctx context.Context) error {
 		transcriptBuilder.WriteString(fmt.Sprintf("[%s] %s: %s\n", dateStr, m.Sender, m.Message))
 	}
 
-	// Call Gemini API
-	extractedDTOs, err := e.callGeminiAPI(ctx, transcriptBuilder.String())
+	// Call Gemini API with existing events context
+	extractedDTOs, err := e.callGeminiAPI(ctx, transcriptBuilder.String(), existingEvents)
 	if err != nil {
 		return fmt.Errorf("erro na extração com Gemini: %w", err)
 	}
 
-	log.Printf("[Extractor] LLM retornou %d evento(s) identificado(s).", len(extractedDTOs))
+	log.Printf("[Extractor] LLM retornou %d evento(s) identificado(s)/atualizado(s).", len(extractedDTOs))
 
-	loc, _ := time.LoadLocation(e.cfg.ReferenceTZ)
-	if loc == nil {
-		loc = time.Local
+	// Map existing events by ID for validation
+	existingByID := make(map[int64]db.Event)
+	for _, ev := range existingEvents {
+		existingByID[ev.ID] = ev
 	}
 
 	// Convert DTOs to DB Event models
 	var eventsToSave []db.Event
+	var updatedCount, createdCount int
+
 	for _, dto := range extractedDTOs {
 		if strings.TrimSpace(dto.Title) == "" {
 			continue
@@ -109,7 +181,35 @@ func (e *Extractor) Run(ctx context.Context) error {
 			eventTime = time.Now().In(loc)
 		}
 
+		var targetID int64
+		if dto.ID != nil && *dto.ID > 0 {
+			if _, exists := existingByID[*dto.ID]; exists {
+				targetID = *dto.ID
+			}
+		}
+
+		// Fallback: if action indicates update or if DTO matches an existing event's title
+		if targetID == 0 && (dto.Action == "update" || dto.Action == "alter" || dto.Action == "change") {
+			for _, ex := range existingEvents {
+				if strings.EqualFold(strings.TrimSpace(ex.Title), strings.TrimSpace(dto.Title)) {
+					targetID = ex.ID
+					break
+				}
+			}
+		}
+
+		if targetID > 0 {
+			updatedCount++
+			log.Printf("[Extractor] Alteração de data/evento detectada: Atualizando Evento ID %d (%s) para nova data %s",
+				targetID, dto.Title, eventTime.Format("2006-01-02 15:04:05"))
+		} else {
+			createdCount++
+			log.Printf("[Extractor] Novo evento detectado: Criando '%s' para a data %s",
+				dto.Title, eventTime.Format("2006-01-02 15:04:05"))
+		}
+
 		eventsToSave = append(eventsToSave, db.Event{
+			ID:           targetID,
 			Title:        strings.TrimSpace(dto.Title),
 			Description:  strings.TrimSpace(dto.Description),
 			Category:     normalizeCategory(dto.Category),
@@ -118,14 +218,14 @@ func (e *Extractor) Run(ctx context.Context) error {
 		})
 	}
 
-	// Persist events and mark messages processed in a single transaction
+	// Persist events (insert or update) and mark messages processed in a single transaction
 	err = e.database.SaveEventsAndMarkProcessed(ctx, eventsToSave, msgIDs)
 	if err != nil {
 		return fmt.Errorf("falha ao persistir eventos e atualizar mensagens no banco: %w", err)
 	}
 
-	log.Printf("[Extractor] Sucesso: %d eventos inseridos e %d mensagens marcadas como processadas (processed = 1).",
-		len(eventsToSave), len(msgIDs))
+	log.Printf("[Extractor] Sucesso: %d evento(s) criado(s), %d evento(s) atualizado(s)/alterado(s) e %d mensagens marcadas como processadas (processed = 1).",
+		createdCount, updatedCount, len(msgIDs))
 
 	return nil
 }
@@ -167,7 +267,7 @@ type geminiResponse struct {
 	} `json:"error,omitempty"`
 }
 
-func (e *Extractor) callGeminiAPI(ctx context.Context, messagesTranscript string) ([]ExtractedEventDTO, error) {
+func (e *Extractor) callGeminiAPI(ctx context.Context, messagesTranscript string, existingEvents []db.Event) ([]ExtractedEventDTO, error) {
 	if e.cfg.GeminiAPIKey == "" {
 		return nil, errors.New("chave da API do Gemini não configurada (GEMINI_API_KEY vazia)")
 	}
@@ -178,32 +278,50 @@ func (e *Extractor) callGeminiAPI(ctx context.Context, messagesTranscript string
 		now = now.In(location)
 	}
 
-	systemPrompt := fmt.Sprintf(`Você é um assistente especialista em extrair eventos, compromissos, reuniões, ensaios, apresentações e prazos a partir de mensagens de um grupo do WhatsApp.
+	systemPrompt := fmt.Sprintf(`Você é um assistente especialista em extrair e sincronizar eventos, compromissos, reuniões, ensaios, apresentações e prazos a partir de mensagens de um grupo do WhatsApp.
 
 Contexto Temporal Atual:
 - Data e Hora Atual de Referência: %s (%s)
 - Fuso Horário Local: %s (Horário de Brasília)
 
+Eventos Atualmente Cadastrados no Banco de Dados:
+%s
+
 Diretrizes Obrigatórias:
 1. Analise cuidadosamente todo o histórico de mensagens fornecido.
-2. Identifique todos os eventos futuros ou compromissos combinados pelos participantes.
-3. Se a mensagem mencionar um horário (ex: "19:30", "15:00", "às 14h"), preserve ESTRITAMENTE esse horário local no campo 'event_date' formatado como 'YYYY-MM-DDTHH:MM:SS' (NÃO subtraia horas e NÃO adicione Z). Se o ano não for mencionado, assuma o ano corrente.
-4. Extraia quem propôs ou confirmou a informação em 'source_sender'.
-5. Categorize cada evento no campo 'category' como:
+2. Identifique todos os eventos futuros ou compromissos combinados pelos participantes, bem como ALTERAÇÕES de eventos já existentes.
+3. DETECÇÃO E ALTERAÇÃO DE DATAS / REAGENDAMENTOS:
+   - Verifique atentamente se alguma mensagem traz uma ALTERAÇÃO, ADIAMENTO, MUDANÇA DE DATA/HORÁRIO, CANCELAMENTO/REAGENDAMENTO ou atualização de local/detalhes de um evento já cadastrado na lista 'Eventos Atualmente Cadastrados no Banco de Dados'.
+   - Se uma mensagem alterar a data/horário ou detalhes de um evento existente:
+     * NÃO crie um novo evento duplicado.
+     * Preencha o campo 'id' com o número do ID do evento existente correspondente.
+     * Preencha o campo 'action' como "update".
+     * Preencha 'event_date' com a NOVA data/horário estipulado na mensagem.
+     * Atualize 'title', 'description' e 'source_sender' com as informações mais recentes da mensagem.
+   - Se for um NOVO compromisso/evento que ainda não existe no cadastro:
+     * Preencha 'id': null.
+     * Preencha 'action': "create".
+     * Preencha 'event_date' com a data e horário agendados.
+   - Se houver múltiplas mensagens no histórico propondo e depois alterando a mesma data (ex: propõe dia 10 e depois altera para dia 12), consolide apenas a data final corrigida.
+4. Se a mensagem mencionar um horário (ex: "19:30", "15:00", "às 14h"), preserve ESTRITAMENTE esse horário local no campo 'event_date' formatado como 'YYYY-MM-DDTHH:MM:SS' (NÃO subtraia horas e NÃO adicione Z). Se o ano não for mencionado, assuma o ano corrente.
+5. Extraia quem propôs, confirmou ou alterou a informação em 'source_sender'.
+6. Categorize cada evento no campo 'category' como:
    - "apresentacao" para apresentações públicas, shows, festivais, demonstrações e eventos culturais;
    - "treino" para ensaios, ensaio geral, treinos técnicos e oficinas práticas de taiko;
    - "geral" para reuniões de alinhamento, decisões financeiras, confraternizações e avisos gerais.
-6. Se nenhuma mensagem contiver eventos ou compromissos agendados, retorne uma lista JSON vazia: []
-7. Responda ESTRITAMENTE um array JSON válido sem markdown ou blocos de código adicionais.
+7. Se nenhuma mensagem contiver novos eventos ou alterações em eventos existentes, retorne uma lista JSON vazia: []
+8. Responda ESTRITAMENTE um array JSON válido sem markdown ou blocos de código adicionais.
 
 Formato esperado de cada item:
 {
-  "title": "Título conciso do evento (ex: Ensaio Geral de Taiko, Apresentação no Festival)",
+  "id": 1,
+  "action": "update",
+  "title": "Título do evento (ex: Ensaio Geral de Taiko)",
   "description": "Detalhes como local, horário completo, o que levar, observações relevantes",
   "category": "apresentacao | treino | geral",
   "event_date": "2026-08-30T19:30:00",
-  "source_sender": "Nome/Número do participante que anunciou"
-}`, now.Format("2006-01-02 15:04:05"), now.Weekday().String(), e.cfg.ReferenceTZ)
+  "source_sender": "Nome/Número do participante que anunciou ou alterou"
+}`, now.Format("2006-01-02 15:04:05"), now.Weekday().String(), e.cfg.ReferenceTZ, formatExistingEvents(existingEvents, location))
 
 	userPrompt := fmt.Sprintf("Histórico de mensagens recentes do WhatsApp:\n\n%s\n\nExtraia todos os eventos e retorne estritamente o array JSON:", messagesTranscript)
 

@@ -119,3 +119,85 @@ func TestDB_SaveEventsAndMarkProcessed(t *testing.T) {
 		t.Errorf("Unexpected stats: total=%d, unprocessed=%d, processed=%d", totalEvents, unprocessedCount, processedCount)
 	}
 }
+
+func TestDB_UpdateExistingEventDate(t *testing.T) {
+	database, cleanup := setupTestDB(t)
+	defer cleanup()
+
+	ctx := context.Background()
+
+	// Initial message and event creation
+	_ = database.SaveMessage(ctx, "msg-201", "Carlos Sensei", "Ensaio sábado dia 30/08 às 15:00 na sede", time.Now())
+	initialDate := time.Date(2026, 8, 30, 15, 0, 0, 0, time.Local)
+	initialEvents := []Event{
+		{
+			Title:        "Ensaio Geral",
+			Description:  "Ensaio na sede",
+			Category:     "treino",
+			EventDate:    initialDate,
+			SourceSender: "Carlos Sensei",
+		},
+	}
+	err := database.SaveEventsAndMarkProcessed(ctx, initialEvents, []string{"msg-201"})
+	if err != nil {
+		t.Fatalf("Initial SaveEventsAndMarkProcessed failed: %v", err)
+	}
+
+	allEvents, err := database.GetAllEvents(ctx)
+	if err != nil || len(allEvents) != 1 {
+		t.Fatalf("Expected 1 event, got %d (err: %v)", len(allEvents), err)
+	}
+	createdID := allEvents[0].ID
+	if createdID == 0 {
+		t.Fatalf("Expected non-zero createdID")
+	}
+
+	// New message altering the date of the existing event
+	_ = database.SaveMessage(ctx, "msg-202", "Carlos Sensei", "Pessoal, o ensaio geral mudou para domingo 31/08 às 16:00!", time.Now())
+	newDate := time.Date(2026, 8, 31, 16, 0, 0, 0, time.Local)
+	updatedEvents := []Event{
+		{
+			ID:           createdID, // Existing event ID being altered
+			Title:        "Ensaio Geral",
+			Description:  "Ensaio adiado para domingo às 16:00 na sede",
+			Category:     "treino",
+			EventDate:    newDate,
+			SourceSender: "Carlos Sensei",
+		},
+	}
+
+	err = database.SaveEventsAndMarkProcessed(ctx, updatedEvents, []string{"msg-202"})
+	if err != nil {
+		t.Fatalf("Updated SaveEventsAndMarkProcessed failed: %v", err)
+	}
+
+	// Verify that the total count of events is STILL 1 (no duplicate created)
+	allEventsAfterUpdate, err := database.GetAllEvents(ctx)
+	if err != nil {
+		t.Fatalf("GetAllEvents failed: %v", err)
+	}
+	if len(allEventsAfterUpdate) != 1 {
+		t.Fatalf("Expected still 1 event after date alteration, but found %d", len(allEventsAfterUpdate))
+	}
+
+	// Verify that the event date and details were updated
+	updatedEv := allEventsAfterUpdate[0]
+	if updatedEv.ID != createdID {
+		t.Errorf("Expected ID %d, got %d", createdID, updatedEv.ID)
+	}
+	if !updatedEv.EventDate.Equal(newDate) {
+		t.Errorf("Expected updated event_date %v, got %v", newDate, updatedEv.EventDate)
+	}
+	if updatedEv.Description != "Ensaio adiado para domingo às 16:00 na sede" {
+		t.Errorf("Expected updated description, got %q", updatedEv.Description)
+	}
+
+	// Verify GetEventByID
+	eventByID, err := database.GetEventByID(ctx, createdID)
+	if err != nil {
+		t.Fatalf("GetEventByID failed: %v", err)
+	}
+	if eventByID.ID != createdID || !eventByID.EventDate.Equal(newDate) {
+		t.Errorf("GetEventByID returned unexpected data: %+v", eventByID)
+	}
+}

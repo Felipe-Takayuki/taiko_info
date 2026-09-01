@@ -5,6 +5,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/takayuki/taiko_info/internal/db"
 )
 
 func TestParseISODate(t *testing.T) {
@@ -114,5 +116,99 @@ func TestExtractedJSONMarkdownFenceStripping(t *testing.T) {
 
 	if len(dtos) != 1 || dtos[0].Title != "Teste" || dtos[0].Category != "treino" {
 		t.Fatalf("Unexpected parsed content: %+v", dtos)
+	}
+}
+
+func TestExtractedJSONParsingWithUpdates(t *testing.T) {
+	sampleJSON := `[
+		{
+			"id": 1,
+			"action": "update",
+			"title": "Ensaio Geral dos Tambores",
+			"description": "Ensaio adiado para domingo às 16h",
+			"category": "treino",
+			"event_date": "2026-09-06T16:00:00",
+			"source_sender": "Sensei Carlos"
+		},
+		{
+			"id": null,
+			"action": "create",
+			"title": "Apresentação no Festival da Primavera",
+			"description": "Novo festival confirmado",
+			"category": "apresentacao",
+			"event_date": "2026-09-12T14:30:00",
+			"source_sender": "Diretoria"
+		},
+		{
+			"id": "2",
+			"action": "update",
+			"title": "Reunião de Diretoria",
+			"description": "Horário antecipado para 18h",
+			"category": "geral",
+			"event_date": "2026-09-10T18:00:00",
+			"source_sender": "Ana Paula"
+		}
+	]`
+
+	var dtos []ExtractedEventDTO
+	err := json.Unmarshal([]byte(sampleJSON), &dtos)
+	if err != nil {
+		t.Fatalf("Failed to unmarshal update event json: %v", err)
+	}
+
+	if len(dtos) != 3 {
+		t.Fatalf("Expected 3 events, got %d", len(dtos))
+	}
+
+	// First item: ID=1, action=update
+	if dtos[0].ID == nil || *dtos[0].ID != 1 {
+		t.Errorf("Expected ID 1, got %v", dtos[0].ID)
+	}
+	if dtos[0].Action != "update" {
+		t.Errorf("Expected action 'update', got %s", dtos[0].Action)
+	}
+
+	// Second item: ID=nil, action=create
+	if dtos[1].ID != nil {
+		t.Errorf("Expected nil ID for new event, got %v", dtos[1].ID)
+	}
+	if dtos[1].Action != "create" {
+		t.Errorf("Expected action 'create', got %s", dtos[1].Action)
+	}
+
+	// Third item: ID="2" (string parsed to int64)
+	if dtos[2].ID == nil || *dtos[2].ID != 2 {
+		t.Errorf("Expected ID 2 parsed from string, got %v", dtos[2].ID)
+	}
+	if dtos[2].Action != "update" {
+		t.Errorf("Expected action 'update', got %s", dtos[2].Action)
+	}
+}
+
+func TestFormatExistingEvents(t *testing.T) {
+	loc, _ := time.LoadLocation("America/Sao_Paulo")
+
+	// Test empty list
+	emptyResult := formatExistingEvents(nil, loc)
+	if !strings.Contains(emptyResult, "Nenhum evento") {
+		t.Errorf("Expected empty message, got: %s", emptyResult)
+	}
+
+	// Test with events
+	evDate := time.Date(2026, 8, 30, 15, 0, 0, 0, loc)
+	events := []db.Event{
+		{
+			ID:           1,
+			Title:        "Ensaio Geral",
+			Category:     "treino",
+			EventDate:    evDate,
+			Description:  "Ensaio na sede",
+			SourceSender: "Carlos Sensei",
+		},
+	}
+
+	result := formatExistingEvents(events, loc)
+	if !strings.Contains(result, "[ID: 1]") || !strings.Contains(result, "Ensaio Geral") || !strings.Contains(result, "2026-08-30 15:00:00") {
+		t.Errorf("formatExistingEvents output unexpected: %s", result)
 	}
 }

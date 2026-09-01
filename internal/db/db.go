@@ -175,7 +175,7 @@ func (d *DB) GetUnprocessedMessages(ctx context.Context, limit int) ([]Message, 
 	return msgs, rows.Err()
 }
 
-// SaveEventsAndMarkProcessed atomically inserts extracted events and updates messages to processed = 1.
+// SaveEventsAndMarkProcessed atomically inserts or updates extracted events and updates messages to processed = 1.
 func (d *DB) SaveEventsAndMarkProcessed(ctx context.Context, events []Event, messageIDs []string) error {
 	d.writeMu.Lock()
 	defer d.writeMu.Unlock()
@@ -187,14 +187,24 @@ func (d *DB) SaveEventsAndMarkProcessed(ctx context.Context, events []Event, mes
 	defer tx.Rollback()
 
 	if len(events) > 0 {
-		stmtEvent, err := tx.PrepareContext(ctx, `
+		stmtInsert, err := tx.PrepareContext(ctx, `
 			INSERT INTO events (title, description, category, event_date, source_sender, created_at)
 			VALUES (?, ?, ?, ?, ?, ?)
 		`)
 		if err != nil {
 			return fmt.Errorf("prepare event insert failed: %w", err)
 		}
-		defer stmtEvent.Close()
+		defer stmtInsert.Close()
+
+		stmtUpdate, err := tx.PrepareContext(ctx, `
+			UPDATE events
+			SET title = ?, description = ?, category = ?, event_date = ?, source_sender = ?
+			WHERE id = ?
+		`)
+		if err != nil {
+			return fmt.Errorf("prepare event update failed: %w", err)
+		}
+		defer stmtUpdate.Close()
 
 		now := time.Now().Format("2006-01-02 15:04:05")
 		for _, e := range events {
@@ -203,8 +213,25 @@ func (d *DB) SaveEventsAndMarkProcessed(ctx context.Context, events []Event, mes
 			if category == "" {
 				category = "geral"
 			}
-			if _, err := stmtEvent.ExecContext(ctx, e.Title, e.Description, category, eventDateStr, e.SourceSender, now); err != nil {
-				return fmt.Errorf("insert event failed: %w", err)
+
+			if e.ID > 0 {
+				// Update existing event if ID is provided
+				res, err := stmtUpdate.ExecContext(ctx, e.Title, e.Description, category, eventDateStr, e.SourceSender, e.ID)
+				if err != nil {
+					return fmt.Errorf("update event failed: %w", err)
+				}
+				rowsAffected, _ := res.RowsAffected()
+				if rowsAffected == 0 {
+					// Fallback: if event with ID does not exist, insert as new
+					if _, err := stmtInsert.ExecContext(ctx, e.Title, e.Description, category, eventDateStr, e.SourceSender, now); err != nil {
+						return fmt.Errorf("fallback insert event failed: %w", err)
+					}
+				}
+			} else {
+				// Insert new event
+				if _, err := stmtInsert.ExecContext(ctx, e.Title, e.Description, category, eventDateStr, e.SourceSender, now); err != nil {
+					return fmt.Errorf("insert event failed: %w", err)
+				}
 			}
 		}
 	}
@@ -224,6 +251,28 @@ func (d *DB) SaveEventsAndMarkProcessed(ctx context.Context, events []Event, mes
 	}
 
 	return tx.Commit()
+}
+
+// GetEventByID fetches a single event by its ID.
+func (d *DB) GetEventByID(ctx context.Context, id int64) (*Event, error) {
+	query := `
+	SELECT id, title, description, category, event_date, source_sender, created_at
+	FROM events
+	WHERE id = ?
+	`
+	var e Event
+	var eventDateStr, createdAtStr string
+	err := d.QueryRowContext(ctx, query, id).Scan(&e.ID, &e.Title, &e.Description, &e.Category, &eventDateStr, &e.SourceSender, &createdAtStr)
+	if err != nil {
+		return nil, err
+	}
+	if t, err := parseSQLiteTime(eventDateStr); err == nil {
+		e.EventDate = t
+	}
+	if t, err := parseSQLiteTime(createdAtStr); err == nil {
+		e.CreatedAt = t
+	}
+	return &e, nil
 }
 
 // GetAllEvents returns all events ordered by event_date descending.
