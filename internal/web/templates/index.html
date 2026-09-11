@@ -434,6 +434,27 @@
             display: none !important;
         }
 
+        .event-card.canceled {
+            border-color: rgba(239, 68, 68, 0.28);
+            background: rgba(239, 68, 68, 0.03);
+            opacity: 0.88;
+        }
+
+        .event-card.canceled:hover {
+            border-color: rgba(239, 68, 68, 0.45);
+            background: rgba(239, 68, 68, 0.06);
+        }
+
+        .event-card.canceled .event-title {
+            text-decoration: line-through;
+            color: #d4d4d8;
+        }
+
+        .event-card.canceled .event-date-box {
+            border-color: rgba(239, 68, 68, 0.22);
+            background: rgba(239, 68, 68, 0.05);
+        }
+
         /* Event Date Box */
         .event-date-box {
             display: flex;
@@ -568,6 +589,16 @@
             background: rgba(255, 255, 255, 0.02);
             color: var(--text-muted);
             border: 1px solid rgba(255, 255, 255, 0.05);
+        }
+
+        .tag-canceled {
+            background: rgba(239, 68, 68, 0.15);
+            color: #fca5a5;
+            border: 1px solid rgba(239, 68, 68, 0.35);
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
+            font-size: 0.7rem;
         }
 
         .event-description {
@@ -803,7 +834,7 @@
 
                 <div class="events-grid" id="upcoming-grid">
                     {{range .UpcomingEvents}}
-                        <article class="event-card" data-category="{{.Category}}">
+                        <article class="event-card{{if isCanceled .Status}} canceled{{end}}" data-category="{{.Category}}">
                             <div class="event-date-box">
                                 <span class="event-month">{{.EventDate | formatMonth}}</span>
                                 <span class="event-day">{{.EventDate | formatDay}}</span>
@@ -813,6 +844,16 @@
                                 <div class="event-header">
                                     <h3 class="event-title">{{.Title}}</h3>
                                     <div class="event-tags">
+                                        {{if isCanceled .Status}}
+                                            <span class="tag tag-canceled">
+                                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                                    <circle cx="12" cy="12" r="10"></circle>
+                                                    <line x1="15" y1="9" x2="9" y2="15"></line>
+                                                    <line x1="9" y1="9" x2="15" y2="15"></line>
+                                                </svg>
+                                                Cancelado
+                                            </span>
+                                        {{end}}
                                         <span class="tag tag-cat tag-cat-{{.Category}}">
                                             {{.Category | formatCategory}}
                                         </span>
@@ -823,7 +864,9 @@
                                             </svg>
                                             {{.EventDate | formatTime}}
                                         </span>
-                                        <span class="tag tag-relative">{{.EventDate | formatRelative}}</span>
+                                        {{if not (isCanceled .Status)}}
+                                            <span class="tag tag-relative">{{.EventDate | formatRelative}}</span>
+                                        {{end}}
                                     </div>
                                 </div>
                                 {{if .Description}}
@@ -865,7 +908,7 @@
 
                 <div class="events-grid" id="past-grid">
                     {{range .PastEvents}}
-                        <article class="event-card past" data-category="{{.Category}}">
+                        <article class="event-card past{{if isCanceled .Status}} canceled{{end}}" data-category="{{.Category}}">
                             <div class="event-date-box">
                                 <span class="event-month">{{.EventDate | formatMonth}}</span>
                                 <span class="event-day">{{.EventDate | formatDay}}</span>
@@ -875,6 +918,16 @@
                                 <div class="event-header">
                                     <h3 class="event-title">{{.Title}}</h3>
                                     <div class="event-tags">
+                                        {{if isCanceled .Status}}
+                                            <span class="tag tag-canceled">
+                                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                                    <circle cx="12" cy="12" r="10"></circle>
+                                                    <line x1="15" y1="9" x2="9" y2="15"></line>
+                                                    <line x1="9" y1="9" x2="15" y2="15"></line>
+                                                </svg>
+                                                Cancelado
+                                            </span>
+                                        {{end}}
                                         <span class="tag tag-cat tag-cat-{{.Category}}">
                                             {{.Category | formatCategory}}
                                         </span>
@@ -885,7 +938,11 @@
                                             </svg>
                                             {{.EventDate | formatTime}}
                                         </span>
-                                        <span class="tag tag-past">Concluído</span>
+                                        {{if isCanceled .Status}}
+                                            <span class="tag tag-past">Cancelado</span>
+                                        {{else}}
+                                            <span class="tag tag-past">Concluído</span>
+                                        {{end}}
                                     </div>
                                 </div>
                                 {{if .Description}}

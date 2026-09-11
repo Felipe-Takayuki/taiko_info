@@ -208,7 +208,65 @@ func TestFormatExistingEvents(t *testing.T) {
 	}
 
 	result := formatExistingEvents(events, loc)
-	if !strings.Contains(result, "[ID: 1]") || !strings.Contains(result, "Ensaio Geral") || !strings.Contains(result, "2026-08-30 15:00:00") {
+	if !strings.Contains(result, "[ID: 1]") || !strings.Contains(result, "Ensaio Geral") || !strings.Contains(result, "2026-08-30 15:00:00") || !strings.Contains(result, "Status: agendado") {
 		t.Errorf("formatExistingEvents output unexpected: %s", result)
+	}
+}
+
+func TestExtractedJSONParsingWithCancel(t *testing.T) {
+	sampleJSON := `[
+		{
+			"id": 5,
+			"action": "cancel",
+			"status": "cancelado",
+			"title": "Ensaio de Taiko",
+			"description": "Cancelado devido à forte chuva",
+			"category": "treino",
+			"event_date": "2026-09-06T15:00:00",
+			"source_sender": "Sensei Carlos"
+		}
+	]`
+
+	var dtos []ExtractedEventDTO
+	err := json.Unmarshal([]byte(sampleJSON), &dtos)
+	if err != nil {
+		t.Fatalf("Failed to unmarshal cancel event json: %v", err)
+	}
+
+	if len(dtos) != 1 {
+		t.Fatalf("Expected 1 event, got %d", len(dtos))
+	}
+
+	if dtos[0].ID == nil || *dtos[0].ID != 5 {
+		t.Errorf("Expected ID 5, got %v", dtos[0].ID)
+	}
+	if dtos[0].Action != "cancel" {
+		t.Errorf("Expected action 'cancel', got %s", dtos[0].Action)
+	}
+	if dtos[0].Status != "cancelado" {
+		t.Errorf("Expected status 'cancelado', got %s", dtos[0].Status)
+	}
+}
+
+func TestNormalizeStatus(t *testing.T) {
+	tests := []struct {
+		input    string
+		expected string
+	}{
+		{"cancelado", "cancelado"},
+		{"Cancelado", "cancelado"},
+		{"CANCELADO", "cancelado"},
+		{"cancel", "cancelado"},
+		{"cancelled", "cancelado"},
+		{"agendado", "agendado"},
+		{"confirmado", "agendado"},
+		{"", "agendado"},
+	}
+
+	for _, tt := range tests {
+		got := normalizeStatus(tt.input)
+		if got != tt.expected {
+			t.Errorf("normalizeStatus(%q) = %q; want %q", tt.input, got, tt.expected)
+		}
 	}
 }

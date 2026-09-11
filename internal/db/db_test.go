@@ -201,3 +201,63 @@ func TestDB_UpdateExistingEventDate(t *testing.T) {
 		t.Errorf("GetEventByID returned unexpected data: %+v", eventByID)
 	}
 }
+
+func TestDB_CancelExistingEvent(t *testing.T) {
+	database, cleanup := setupTestDB(t)
+	defer cleanup()
+
+	ctx := context.Background()
+
+	_ = database.SaveMessage(ctx, "msg-301", "Carlos Sensei", "Ensaio sábado dia 30/08 às 15:00 na sede", time.Now())
+	initialDate := time.Date(2026, 8, 30, 15, 0, 0, 0, time.Local)
+	initialEvents := []Event{
+		{
+			Title:        "Ensaio Geral",
+			Description:  "Ensaio na sede",
+			Category:     "treino",
+			Status:       "agendado",
+			EventDate:    initialDate,
+			SourceSender: "Carlos Sensei",
+		},
+	}
+	err := database.SaveEventsAndMarkProcessed(ctx, initialEvents, []string{"msg-301"})
+	if err != nil {
+		t.Fatalf("Initial SaveEventsAndMarkProcessed failed: %v", err)
+	}
+
+	allEvents, err := database.GetAllEvents(ctx)
+	if err != nil || len(allEvents) != 1 {
+		t.Fatalf("Expected 1 event, got %d (err: %v)", len(allEvents), err)
+	}
+	createdID := allEvents[0].ID
+	if allEvents[0].Status != "agendado" {
+		t.Errorf("Expected status 'agendado', got %q", allEvents[0].Status)
+	}
+
+	// Cancel message
+	_ = database.SaveMessage(ctx, "msg-302", "Carlos Sensei", "Pessoal, o ensaio geral deste sábado está cancelado devido à chuva.", time.Now())
+	canceledEvents := []Event{
+		{
+			ID:           createdID,
+			Title:        "Ensaio Geral",
+			Description:  "Cancelado devido à chuva.",
+			Category:     "treino",
+			Status:       "cancelado",
+			EventDate:    initialDate,
+			SourceSender: "Carlos Sensei",
+		},
+	}
+
+	err = database.SaveEventsAndMarkProcessed(ctx, canceledEvents, []string{"msg-302"})
+	if err != nil {
+		t.Fatalf("Cancel SaveEventsAndMarkProcessed failed: %v", err)
+	}
+
+	evAfterCancel, err := database.GetEventByID(ctx, createdID)
+	if err != nil {
+		t.Fatalf("GetEventByID failed: %v", err)
+	}
+	if evAfterCancel.Status != "cancelado" {
+		t.Errorf("Expected status 'cancelado', got %q", evAfterCancel.Status)
+	}
+}

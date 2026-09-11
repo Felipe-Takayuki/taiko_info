@@ -102,12 +102,16 @@ CREATE TABLE IF NOT EXISTS events (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     title TEXT NOT NULL,
     description TEXT,
+    category TEXT NOT NULL DEFAULT 'geral',
+    status TEXT NOT NULL DEFAULT 'agendado',
     event_date DATETIME NOT NULL,
     source_sender TEXT,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE INDEX IF NOT EXISTS idx_events_date ON events(event_date);
+CREATE INDEX IF NOT EXISTS idx_events_category ON events(category);
+CREATE INDEX IF NOT EXISTS idx_events_status ON events(status);
 ```
 
 ---

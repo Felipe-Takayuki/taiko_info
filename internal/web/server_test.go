@@ -82,4 +82,26 @@ func TestWeb_IndexAndAPIEndpoints(t *testing.T) {
 	if wHealth.Result().StatusCode != http.StatusOK {
 		t.Errorf("GET /healthz status %d; want 200", wHealth.Result().StatusCode)
 	}
+
+	// Test GET / with canceled event
+	_ = database.SaveEventsAndMarkProcessed(ctx, []db.Event{
+		{
+			Title:        "Ensaio Cancelado Teste",
+			Description:  "Cancelado por chuva",
+			Category:     "treino",
+			Status:       "cancelado",
+			EventDate:    time.Now().Add(24 * time.Hour),
+			SourceSender: "Sensei",
+		},
+	}, nil)
+
+	wCanceled := httptest.NewRecorder()
+	server.handleIndex(wCanceled, req)
+	canceledBody := wCanceled.Body.String()
+	if !strings.Contains(canceledBody, "tag-canceled") {
+		t.Errorf("Response body missing tag-canceled class for canceled event")
+	}
+	if !strings.Contains(canceledBody, "event-card canceled") {
+		t.Errorf("Response body missing event-card canceled class")
+	}
 }

@@ -27,6 +27,7 @@ type Event struct {
 	Title        string    `json:"title"`
 	Description  string    `json:"description"`
 	Category     string    `json:"category"` // "apresentacao", "treino", "geral"
+	Status       string    `json:"status"`   // "agendado", "cancelado"
 	EventDate    time.Time `json:"event_date"`
 	SourceSender string    `json:"source_sender"`
 	CreatedAt    time.Time `json:"created_at"`
@@ -95,6 +96,7 @@ func (d *DB) migrate(ctx context.Context) error {
 		title TEXT NOT NULL,
 		description TEXT,
 		category TEXT NOT NULL DEFAULT 'geral',
+		status TEXT NOT NULL DEFAULT 'agendado',
 		event_date DATETIME NOT NULL,
 		source_sender TEXT,
 		created_at DATETIME DEFAULT CURRENT_TIMESTAMP
@@ -118,6 +120,20 @@ func (d *DB) migrate(ctx context.Context) error {
 	// Create index on category after column is guaranteed to exist
 	if _, err := d.ExecContext(ctx, `CREATE INDEX IF NOT EXISTS idx_events_category ON events(category);`); err != nil {
 		return fmt.Errorf("failed to create category index: %w", err)
+	}
+
+	// Safe migration for pre-existing databases that might be missing the status column
+	var statusCount int
+	_ = d.QueryRowContext(ctx, `SELECT count(*) FROM pragma_table_info('events') WHERE name='status'`).Scan(&statusCount)
+	if statusCount == 0 {
+		if _, err := d.ExecContext(ctx, `ALTER TABLE events ADD COLUMN status TEXT NOT NULL DEFAULT 'agendado'`); err != nil {
+			return fmt.Errorf("failed to add status column: %w", err)
+		}
+	}
+
+	// Create index on status after column is guaranteed to exist
+	if _, err := d.ExecContext(ctx, `CREATE INDEX IF NOT EXISTS idx_events_status ON events(status);`); err != nil {
+		return fmt.Errorf("failed to create status index: %w", err)
 	}
 
 	return nil
@@ -188,8 +204,8 @@ func (d *DB) SaveEventsAndMarkProcessed(ctx context.Context, events []Event, mes
 
 	if len(events) > 0 {
 		stmtInsert, err := tx.PrepareContext(ctx, `
-			INSERT INTO events (title, description, category, event_date, source_sender, created_at)
-			VALUES (?, ?, ?, ?, ?, ?)
+			INSERT INTO events (title, description, category, status, event_date, source_sender, created_at)
+			VALUES (?, ?, ?, ?, ?, ?, ?)
 		`)
 		if err != nil {
 			return fmt.Errorf("prepare event insert failed: %w", err)
@@ -198,7 +214,7 @@ func (d *DB) SaveEventsAndMarkProcessed(ctx context.Context, events []Event, mes
 
 		stmtUpdate, err := tx.PrepareContext(ctx, `
 			UPDATE events
-			SET title = ?, description = ?, category = ?, event_date = ?, source_sender = ?
+			SET title = ?, description = ?, category = ?, status = ?, event_date = ?, source_sender = ?
 			WHERE id = ?
 		`)
 		if err != nil {
@@ -213,23 +229,29 @@ func (d *DB) SaveEventsAndMarkProcessed(ctx context.Context, events []Event, mes
 			if category == "" {
 				category = "geral"
 			}
+			status := strings.TrimSpace(strings.ToLower(e.Status))
+			if status == "cancelado" || status == "cancel" {
+				status = "cancelado"
+			} else {
+				status = "agendado"
+			}
 
 			if e.ID > 0 {
 				// Update existing event if ID is provided
-				res, err := stmtUpdate.ExecContext(ctx, e.Title, e.Description, category, eventDateStr, e.SourceSender, e.ID)
+				res, err := stmtUpdate.ExecContext(ctx, e.Title, e.Description, category, status, eventDateStr, e.SourceSender, e.ID)
 				if err != nil {
 					return fmt.Errorf("update event failed: %w", err)
 				}
 				rowsAffected, _ := res.RowsAffected()
 				if rowsAffected == 0 {
 					// Fallback: if event with ID does not exist, insert as new
-					if _, err := stmtInsert.ExecContext(ctx, e.Title, e.Description, category, eventDateStr, e.SourceSender, now); err != nil {
+					if _, err := stmtInsert.ExecContext(ctx, e.Title, e.Description, category, status, eventDateStr, e.SourceSender, now); err != nil {
 						return fmt.Errorf("fallback insert event failed: %w", err)
 					}
 				}
 			} else {
 				// Insert new event
-				if _, err := stmtInsert.ExecContext(ctx, e.Title, e.Description, category, eventDateStr, e.SourceSender, now); err != nil {
+				if _, err := stmtInsert.ExecContext(ctx, e.Title, e.Description, category, status, eventDateStr, e.SourceSender, now); err != nil {
 					return fmt.Errorf("insert event failed: %w", err)
 				}
 			}
@@ -256,15 +278,18 @@ func (d *DB) SaveEventsAndMarkProcessed(ctx context.Context, events []Event, mes
 // GetEventByID fetches a single event by its ID.
 func (d *DB) GetEventByID(ctx context.Context, id int64) (*Event, error) {
 	query := `
-	SELECT id, title, description, category, event_date, source_sender, created_at
+	SELECT id, title, description, category, status, event_date, source_sender, created_at
 	FROM events
 	WHERE id = ?
 	`
 	var e Event
 	var eventDateStr, createdAtStr string
-	err := d.QueryRowContext(ctx, query, id).Scan(&e.ID, &e.Title, &e.Description, &e.Category, &eventDateStr, &e.SourceSender, &createdAtStr)
+	err := d.QueryRowContext(ctx, query, id).Scan(&e.ID, &e.Title, &e.Description, &e.Category, &e.Status, &eventDateStr, &e.SourceSender, &createdAtStr)
 	if err != nil {
 		return nil, err
+	}
+	if e.Status == "" {
+		e.Status = "agendado"
 	}
 	if t, err := parseSQLiteTime(eventDateStr); err == nil {
 		e.EventDate = t
@@ -287,7 +312,7 @@ func (d *DB) GetAllEventsInLocation(ctx context.Context, loc *time.Location) ([]
 	}
 
 	query := `
-	SELECT id, title, description, category, event_date, source_sender, created_at
+	SELECT id, title, description, category, status, event_date, source_sender, created_at
 	FROM events
 	ORDER BY event_date DESC
 	`
@@ -301,11 +326,14 @@ func (d *DB) GetAllEventsInLocation(ctx context.Context, loc *time.Location) ([]
 	for rows.Next() {
 		var e Event
 		var eventDateStr, createdAtStr string
-		if err := rows.Scan(&e.ID, &e.Title, &e.Description, &e.Category, &eventDateStr, &e.SourceSender, &createdAtStr); err != nil {
+		if err := rows.Scan(&e.ID, &e.Title, &e.Description, &e.Category, &e.Status, &eventDateStr, &e.SourceSender, &createdAtStr); err != nil {
 			return nil, err
 		}
 		if e.Category == "" {
 			e.Category = "geral"
+		}
+		if e.Status == "" {
+			e.Status = "agendado"
 		}
 		if t, err := ParseSQLiteTimeInLocation(eventDateStr, loc); err == nil {
 			e.EventDate = t

@@ -156,14 +156,52 @@ func main() {
 	fmt.Printf("✔ Transação de alteração concluída! Evento ID %d atualizado para nova data (%s) sem criar duplicatas.\n",
 		targetEventID, newDate.Format("2006-01-02 15:04:05"))
 
-	// 5. Exibir métricas finais
+	// 5. Simular recebimento de mensagem de CANCELAMENTO DE EVENTO
+	fmt.Println("\n--- 5. Simulando nova mensagem de cancelamento de evento ---")
+	cancelMsgID := "WA-SIM-006"
+	cancelMsgText := "Aviso importante: A Reunião de Alinhamento Financeiro desta terça foi cancelada devido a imprevistos na diretoria."
+	err = database.SaveMessage(ctx, cancelMsgID, "Ana Paula (5511955554444)", cancelMsgText, now)
+	if err != nil {
+		log.Fatalf("Erro ao salvar mensagem de cancelamento: %v", err)
+	}
+	fmt.Printf("✔ [Mensagem Capturada] [%s] Ana Paula: %s\n", cancelMsgID, cancelMsgText)
+
+	// Buscar ID da reunião
+	allEventsCurrent, _ := database.GetAllEvents(ctx)
+	var cancelEventID int64
+	var cancelEventDate time.Time
+	for _, ev := range allEventsCurrent {
+		if ev.Title == "Reunião de Alinhamento Financeiro" {
+			cancelEventID = ev.ID
+			cancelEventDate = ev.EventDate
+			break
+		}
+	}
+
+	canceledEvent := db.Event{
+		ID:           cancelEventID,
+		Title:        "Reunião de Alinhamento Financeiro",
+		Description:  "Cancelada devido a imprevistos na diretoria.",
+		Category:     "geral",
+		Status:       "cancelado",
+		EventDate:    cancelEventDate,
+		SourceSender: "Ana Paula (5511955554444)",
+	}
+
+	err = database.SaveEventsAndMarkProcessed(ctx, []db.Event{canceledEvent}, []string{cancelMsgID})
+	if err != nil {
+		log.Fatalf("Erro no cancelamento do evento: %v", err)
+	}
+	fmt.Printf("✔ Transação de cancelamento concluída! Evento ID %d marcado com status 'cancelado'.\n", cancelEventID)
+
+	// 6. Exibir métricas finais
 	totalEvents, pendingMsgs, processedMsgs, err := database.GetStats(ctx)
 	if err != nil {
 		log.Fatalf("Erro ao consultar métricas: %v", err)
 	}
 
-	fmt.Println("\n--- 5. Resumo no Banco SQLite (app.db) ---")
-	fmt.Printf("• Total de Eventos Registrados: %d (sem duplicatas após alteração de data)\n", totalEvents)
+	fmt.Println("\n--- 6. Resumo no Banco SQLite (app.db) ---")
+	fmt.Printf("• Total de Eventos Registrados: %d (incluindo evento cancelado com status 'cancelado')\n", totalEvents)
 	fmt.Printf("• Mensagens Pendentes: %d\n", pendingMsgs)
 	fmt.Printf("• Mensagens Processadas: %d\n", processedMsgs)
 	fmt.Println("\n=== [SIMULAÇÃO CONCLUÍDA COM SUCESSO] ===")

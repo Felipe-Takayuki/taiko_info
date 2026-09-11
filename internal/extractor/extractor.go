@@ -19,10 +19,11 @@ import (
 // ExtractedEventDTO defines the expected JSON output format from the LLM.
 type ExtractedEventDTO struct {
 	ID           *int64 `json:"id,omitempty"`
-	Action       string `json:"action,omitempty"` // "create", "update"
+	Action       string `json:"action,omitempty"` // "create", "update", "cancel"
 	Title        string `json:"title"`
 	Description  string `json:"description"`
 	Category     string `json:"category"` // "apresentacao", "treino", "geral"
+	Status       string `json:"status,omitempty"` // "agendado", "cancelado"
 	EventDate    string `json:"event_date"` // ISO 8601 string
 	SourceSender string `json:"source_sender"`
 }
@@ -75,11 +76,24 @@ func formatExistingEvents(events []db.Event, loc *time.Location) string {
 	}
 	var sb strings.Builder
 	for _, ev := range events {
+		status := ev.Status
+		if status == "" {
+			status = "agendado"
+		}
 		dateStr := ev.EventDate.In(loc).Format("2006-01-02 15:04:05")
-		sb.WriteString(fmt.Sprintf("- [ID: %d] Título: %q | Categoria: %s | Data/Hora: %s | Descrição: %q | Informado por: %q\n",
-			ev.ID, ev.Title, ev.Category, dateStr, ev.Description, ev.SourceSender))
+		sb.WriteString(fmt.Sprintf("- [ID: %d] Título: %q | Status: %s | Categoria: %s | Data/Hora: %s | Descrição: %q | Informado por: %q\n",
+			ev.ID, ev.Title, status, ev.Category, dateStr, ev.Description, ev.SourceSender))
 	}
 	return sb.String()
+}
+
+// normalizeStatus standardizes event status to "agendado" or "cancelado".
+func normalizeStatus(raw string) string {
+	s := strings.ToLower(strings.TrimSpace(raw))
+	if s == "cancelado" || s == "cancel" || s == "cancelled" {
+		return "cancelado"
+	}
+	return "agendado"
 }
 
 // normalizeCategory standardizes the category string to "apresentacao", "treino", or "geral".
@@ -167,18 +181,11 @@ func (e *Extractor) Run(ctx context.Context) error {
 
 	// Convert DTOs to DB Event models
 	var eventsToSave []db.Event
-	var updatedCount, createdCount int
+	var updatedCount, createdCount, canceledCount int
 
 	for _, dto := range extractedDTOs {
 		if strings.TrimSpace(dto.Title) == "" {
 			continue
-		}
-
-		eventTime, err := parseISODateInLocation(dto.EventDate, loc)
-		if err != nil {
-			log.Printf("[Extractor] Aviso: data inválida '%s' no evento '%s'. Usando data atual. Erro: %v",
-				dto.EventDate, dto.Title, err)
-			eventTime = time.Now().In(loc)
 		}
 
 		var targetID int64
@@ -188,8 +195,12 @@ func (e *Extractor) Run(ctx context.Context) error {
 			}
 		}
 
-		// Fallback: if action indicates update or if DTO matches an existing event's title
-		if targetID == 0 && (dto.Action == "update" || dto.Action == "alter" || dto.Action == "change") {
+		isCancel := strings.EqualFold(strings.TrimSpace(dto.Action), "cancel") ||
+			strings.EqualFold(strings.TrimSpace(dto.Action), "delete") ||
+			strings.EqualFold(strings.TrimSpace(dto.Status), "cancelado")
+
+		// Fallback: if action indicates update/cancel or if DTO matches an existing event's title
+		if targetID == 0 && (isCancel || dto.Action == "update" || dto.Action == "alter" || dto.Action == "change") {
 			for _, ex := range existingEvents {
 				if strings.EqualFold(strings.TrimSpace(ex.Title), strings.TrimSpace(dto.Title)) {
 					targetID = ex.ID
@@ -198,14 +209,41 @@ func (e *Extractor) Run(ctx context.Context) error {
 			}
 		}
 
-		if targetID > 0 {
+		eventTime, err := parseISODateInLocation(dto.EventDate, loc)
+		if err != nil {
+			// If canceling an existing event and date is omitted or unparseable, preserve original date
+			if targetID > 0 && isCancel {
+				if ex, ok := existingByID[targetID]; ok {
+					eventTime = ex.EventDate
+					err = nil
+				}
+			}
+			if err != nil {
+				log.Printf("[Extractor] Aviso: data inválida '%s' no evento '%s'. Usando data atual. Erro: %v",
+					dto.EventDate, dto.Title, err)
+				eventTime = time.Now().In(loc)
+			}
+		}
+
+		status := "agendado"
+		if isCancel {
+			status = "cancelado"
+		} else if dto.Status != "" {
+			status = normalizeStatus(dto.Status)
+		}
+
+		if isCancel && targetID > 0 {
+			canceledCount++
+			log.Printf("[Extractor] Cancelamento de evento detectado: Marcando Evento ID %d (%s) como CANCELADO",
+				targetID, dto.Title)
+		} else if targetID > 0 {
 			updatedCount++
 			log.Printf("[Extractor] Alteração de data/evento detectada: Atualizando Evento ID %d (%s) para nova data %s",
 				targetID, dto.Title, eventTime.Format("2006-01-02 15:04:05"))
 		} else {
 			createdCount++
-			log.Printf("[Extractor] Novo evento detectado: Criando '%s' para a data %s",
-				dto.Title, eventTime.Format("2006-01-02 15:04:05"))
+			log.Printf("[Extractor] Novo evento detectado: Criando '%s' para a data %s (Status: %s)",
+				dto.Title, eventTime.Format("2006-01-02 15:04:05"), status)
 		}
 
 		eventsToSave = append(eventsToSave, db.Event{
@@ -213,6 +251,7 @@ func (e *Extractor) Run(ctx context.Context) error {
 			Title:        strings.TrimSpace(dto.Title),
 			Description:  strings.TrimSpace(dto.Description),
 			Category:     normalizeCategory(dto.Category),
+			Status:       status,
 			EventDate:    eventTime,
 			SourceSender: strings.TrimSpace(dto.SourceSender),
 		})
@@ -224,8 +263,8 @@ func (e *Extractor) Run(ctx context.Context) error {
 		return fmt.Errorf("falha ao persistir eventos e atualizar mensagens no banco: %w", err)
 	}
 
-	log.Printf("[Extractor] Sucesso: %d evento(s) criado(s), %d evento(s) atualizado(s)/alterado(s) e %d mensagens marcadas como processadas (processed = 1).",
-		createdCount, updatedCount, len(msgIDs))
+	log.Printf("[Extractor] Sucesso: %d evento(s) criado(s), %d evento(s) atualizado(s), %d evento(s) cancelado(s) e %d mensagens marcadas como processadas (processed = 1).",
+		createdCount, updatedCount, canceledCount, len(msgIDs))
 
 	return nil
 }
@@ -289,38 +328,51 @@ Eventos Atualmente Cadastrados no Banco de Dados:
 
 Diretrizes Obrigatórias:
 1. Analise cuidadosamente todo o histórico de mensagens fornecido.
-2. Identifique todos os eventos futuros ou compromissos combinados pelos participantes, bem como ALTERAÇÕES de eventos já existentes.
-3. DETECÇÃO E ALTERAÇÃO DE DATAS / REAGENDAMENTOS:
-   - Verifique atentamente se alguma mensagem traz uma ALTERAÇÃO, ADIAMENTO, MUDANÇA DE DATA/HORÁRIO, CANCELAMENTO/REAGENDAMENTO ou atualização de local/detalhes de um evento já cadastrado na lista 'Eventos Atualmente Cadastrados no Banco de Dados'.
+2. Identifique todos os eventos futuros ou compromissos combinados pelos participantes, bem como ALTERAÇÕES e CANCELAMENTOS de eventos já existentes.
+3. DETECÇÃO DE CANCELAMENTOS:
+   - Verifique atentamente se alguma mensagem avisa que um evento já cadastrado foi CANCELADO (ex: "o ensaio de sábado foi cancelado", "apresentação cancelada", "não vai ter ensaio amanhã").
+   - Quando um evento existente for cancelado:
+     * NÃO crie um novo evento.
+     * Preencha o campo 'id' com o número do ID do evento existente correspondente.
+     * Preencha o campo 'action' como "cancel".
+     * Preencha o campo 'status' como "cancelado".
+     * Mantenha 'event_date' com a data original do evento.
+     * Atualize 'description' com o motivo do cancelamento se mencionado na mensagem.
+     * Atualize 'source_sender' com o participante que avisou o cancelamento.
+4. DETECÇÃO E ALTERAÇÃO DE DATAS / REAGENDAMENTOS:
+   - Verifique atentamente se alguma mensagem traz uma ALTERAÇÃO, ADIAMENTO, MUDANÇA DE DATA/HORÁRIO, ou atualização de local/detalhes de um evento já cadastrado na lista 'Eventos Atualmente Cadastrados no Banco de Dados'.
    - Se uma mensagem alterar a data/horário ou detalhes de um evento existente:
      * NÃO crie um novo evento duplicado.
      * Preencha o campo 'id' com o número do ID do evento existente correspondente.
      * Preencha o campo 'action' como "update".
+     * Preencha o campo 'status' como "agendado".
      * Preencha 'event_date' com a NOVA data/horário estipulado na mensagem.
      * Atualize 'title', 'description' e 'source_sender' com as informações mais recentes da mensagem.
    - Se for um NOVO compromisso/evento que ainda não existe no cadastro:
      * Preencha 'id': null.
      * Preencha 'action': "create".
+     * Preencha 'status': "agendado".
      * Preencha 'event_date' com a data e horário agendados.
-   - Se houver múltiplas mensagens no histórico propondo e depois alterando a mesma data (ex: propõe dia 10 e depois altera para dia 12), consolide apenas a data final corrigida.
-4. Se a mensagem mencionar um horário (ex: "19:30", "15:00", "às 14h"), preserve ESTRITAMENTE esse horário local no campo 'event_date' formatado como 'YYYY-MM-DDTHH:MM:SS' (NÃO subtraia horas e NÃO adicione Z). Se o ano não for mencionado, assuma o ano corrente.
-5. Extraia quem propôs, confirmou ou alterou a informação em 'source_sender'.
-6. Categorize cada evento no campo 'category' como:
+   - Se houver múltiplas mensagens no histórico propondo e depois alterando a mesma data ou cancelando, consolide apenas a decisão final.
+5. Se a mensagem mencionar um horário (ex: "19:30", "15:00", "às 14h"), preserve ESTRITAMENTE esse horário local no campo 'event_date' formatado como 'YYYY-MM-DDTHH:MM:SS' (NÃO subtraia horas e NÃO adicione Z). Se o ano não for mencionado, assuma o ano corrente.
+6. Extraia quem propôs, confirmou ou alterou a informação em 'source_sender'.
+7. Categorize cada evento no campo 'category' como:
    - "apresentacao" para apresentações públicas, shows, festivais, demonstrações e eventos culturais;
    - "treino" para ensaios, ensaio geral, treinos técnicos e oficinas práticas de taiko;
    - "geral" para reuniões de alinhamento, decisões financeiras, confraternizações e avisos gerais.
-7. Se nenhuma mensagem contiver novos eventos ou alterações em eventos existentes, retorne uma lista JSON vazia: []
-8. Responda ESTRITAMENTE um array JSON válido sem markdown ou blocos de código adicionais.
+8. Se nenhuma mensagem contiver novos eventos, alterações ou cancelamentos em eventos existentes, retorne uma lista JSON vazia: []
+9. Responda ESTRITAMENTE um array JSON válido sem markdown ou blocos de código adicionais.
 
 Formato esperado de cada item:
 {
   "id": 1,
-  "action": "update",
+  "action": "create | update | cancel",
+  "status": "agendado | cancelado",
   "title": "Título do evento (ex: Ensaio Geral de Taiko)",
-  "description": "Detalhes como local, horário completo, o que levar, observações relevantes",
+  "description": "Detalhes como local, horário completo, o que levar, observações relevantes ou motivo do cancelamento",
   "category": "apresentacao | treino | geral",
   "event_date": "2026-08-30T19:30:00",
-  "source_sender": "Nome/Número do participante que anunciou ou alterou"
+  "source_sender": "Nome/Número do participante que anunciou, alterou ou cancelou"
 }`, now.Format("2006-01-02 15:04:05"), now.Weekday().String(), e.cfg.ReferenceTZ, formatExistingEvents(existingEvents, location))
 
 	userPrompt := fmt.Sprintf("Histórico de mensagens recentes do WhatsApp:\n\n%s\n\nExtraia todos os eventos e retorne estritamente o array JSON:", messagesTranscript)

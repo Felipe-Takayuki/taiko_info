@@ -52,6 +52,9 @@ func New(cfg *config.Config, database *db.DB) (*Server, error) {
 	}
 
 	funcMap := template.FuncMap{
+		"isCanceled": func(status string) bool {
+			return strings.EqualFold(strings.TrimSpace(status), "cancelado")
+		},
 		"formatCategory": func(cat string) string {
 			switch strings.ToLower(strings.TrimSpace(cat)) {
 			case "apresentacao", "apresentação":
