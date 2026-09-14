@@ -1,4 +1,4 @@
-# Ryuka Taiko Info - Gerenciador Autônomo de Eventos WhatsApp
+# Gerenciador Autônomo de Eventos WhatsApp
 
 Sistema autônomo, robusto e de altíssimo desempenho desenvolvido em **100% Go (Golang)**, **SQLite** e **Google Gemini**, projetado para rodar em servidores de baixo consumo de recursos (Raspberry Pi, VPS com 512MB RAM, instâncias micro).
 
